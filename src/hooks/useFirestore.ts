@@ -12,7 +12,8 @@ import {
   Timestamp,
   writeBatch,
 } from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { ref, listAll, deleteObject } from 'firebase/storage';
+import { db, storage } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import { useNotesStore } from '../stores/notesStore';
 import type { Note, Category, Tag, FirestoreCategory, FirestoreTag } from '../types';
@@ -254,19 +255,51 @@ export const useFirestore = () => {
     [userId]
   );
 
+  // メモに関連する画像を削除するヘルパー関数
+  const deleteNoteImages = useCallback(
+    async (noteId: string) => {
+      if (!userId) return;
+
+      try {
+        const folderPath = `users/${userId}/notes/${noteId}/images`;
+        const folderRef = ref(storage, folderPath);
+        const listResult = await listAll(folderRef);
+
+        // 全ての画像を削除
+        const deletePromises = listResult.items.map((itemRef) =>
+          deleteObject(itemRef).catch((err) => {
+            console.warn('Failed to delete image:', err);
+          })
+        );
+
+        await Promise.all(deletePromises);
+      } catch (err) {
+        // フォルダが存在しない場合などはエラーを無視
+        console.warn('Failed to delete note images:', err);
+      }
+    },
+    [userId]
+  );
+
   const deleteNote = useCallback(
     async (id: string) => {
       if (!userId) return;
 
+      // 関連する画像を削除
+      await deleteNoteImages(id);
+
       const noteRef = doc(db, `users/${userId}/notes/${id}`);
       await deleteDoc(noteRef);
     },
-    [userId]
+    [userId, deleteNoteImages]
   );
 
   const deleteNotes = useCallback(
     async (ids: string[]) => {
       if (!userId) return;
+
+      // 各メモの画像を削除
+      await Promise.all(ids.map((id) => deleteNoteImages(id)));
 
       const batch = writeBatch(db);
       ids.forEach((id) => {
@@ -275,7 +308,7 @@ export const useFirestore = () => {
       });
       await batch.commit();
     },
-    [userId]
+    [userId, deleteNoteImages]
   );
 
   // Category CRUD

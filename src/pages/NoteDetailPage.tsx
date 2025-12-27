@@ -215,6 +215,15 @@ export const NoteDetailPage = () => {
                         {children}
                       </a>
                     ),
+                    img: ({ src, alt }) => (
+                      <img 
+                        src={src} 
+                        alt={alt || ''} 
+                        className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
+                        loading="lazy"
+                        onClick={() => src && window.open(src, '_blank')}
+                      />
+                    ),
                   }}
                 >
                   {note.content}

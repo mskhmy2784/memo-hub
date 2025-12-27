@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNotesStore } from '../stores/notesStore';
 import { useFirestore } from '../hooks/useFirestore';
+import { useImageUpload } from '../hooks/useImageUpload';
 import type { UrlInfo } from '../types';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,11 +17,14 @@ import {
   Link,
   Eye,
   Edit3,
+  ImagePlus,
+  Loader2,
 } from 'lucide-react';
 
 export const NoteModal = () => {
   const { modal, notes, categories, tags, closeModal } = useNotesStore();
   const { addNote, updateNote, addTag } = useFirestore();
+  const { uploadImage, isUploading, uploadProgress } = useImageUpload();
 
   const [formData, setFormData] = useState({
     title: '',
@@ -37,6 +41,80 @@ export const NoteModal = () => {
   const [tagInput, setTagInput] = useState('');
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [tempNoteId, setTempNoteId] = useState<string>('');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 新規作成時の一時ID生成
+  useEffect(() => {
+    if (modal.isOpen && modal.mode === 'create') {
+      setTempNoteId(`temp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`);
+    } else if (modal.isOpen && modal.mode === 'edit' && modal.noteId) {
+      setTempNoteId(modal.noteId);
+    }
+  }, [modal.isOpen, modal.mode, modal.noteId]);
+
+  // 画像アップロード処理
+  const handleImageUpload = async (file: File) => {
+    if (!tempNoteId) return;
+
+    try {
+      const imageUrl = await uploadImage(file, tempNoteId);
+      // Markdown形式で画像を挿入
+      const imageMarkdown = `![](${imageUrl})`;
+      
+      // カーソル位置に挿入
+      if (textareaRef.current) {
+        const { selectionStart, selectionEnd } = textareaRef.current;
+        const newContent = 
+          formData.content.substring(0, selectionStart) + 
+          imageMarkdown + 
+          formData.content.substring(selectionEnd);
+        setFormData({ ...formData, content: newContent });
+        
+        // カーソル位置を更新
+        setTimeout(() => {
+          if (textareaRef.current) {
+            const newPosition = selectionStart + imageMarkdown.length;
+            textareaRef.current.selectionStart = newPosition;
+            textareaRef.current.selectionEnd = newPosition;
+            textareaRef.current.focus();
+          }
+        }, 0);
+      } else {
+        setFormData({ ...formData, content: formData.content + '\n' + imageMarkdown });
+      }
+    } catch (err: any) {
+      setErrors({ ...errors, image: err.message });
+    }
+  };
+
+  // ファイル選択ハンドラ
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleImageUpload(file);
+    }
+    // inputをリセット（同じファイルを再選択可能に）
+    e.target.value = '';
+  };
+
+  // ペーストハンドラ（クリップボードから画像）
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          await handleImageUpload(file);
+        }
+        return;
+      }
+    }
+  };
 
   // タグの色候補
   const tagColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
@@ -323,6 +401,14 @@ export const NoteModal = () => {
                             {children}
                           </a>
                         ),
+                        img: ({ src, alt }) => (
+                          <img 
+                            src={src} 
+                            alt={alt || ''} 
+                            className="max-w-full h-auto rounded-lg my-2"
+                            loading="lazy"
+                          />
+                        ),
                       }}
                     >
                       {formData.content}
@@ -333,15 +419,58 @@ export const NoteModal = () => {
                 </div>
               ) : (
                 <>
-                  <textarea
-                    value={formData.content}
-                    onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                    placeholder="メモの内容...&#10;&#10;Markdown記法が使えます:&#10;**太字** / *斜体*&#10;- リスト&#10;1. 番号リスト&#10;> 引用&#10;`コード`"
-                    rows={8}
-                    className="input resize-none font-mono text-sm"
-                  />
+                  <div className="relative">
+                    <textarea
+                      ref={textareaRef}
+                      value={formData.content}
+                      onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                      onPaste={handlePaste}
+                      placeholder="メモの内容...&#10;&#10;Markdown記法が使えます:&#10;**太字** / *斜体*&#10;- リスト&#10;1. 番号リスト&#10;> 引用&#10;`コード`&#10;&#10;画像: Ctrl+V でペースト可能"
+                      rows={8}
+                      className="input resize-none font-mono text-sm pr-12"
+                      disabled={isUploading}
+                    />
+                    {/* 画像アップロードボタン */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploading}
+                      className="absolute right-2 top-2 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+                      title="画像を追加"
+                    >
+                      {isUploading ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <ImagePlus className="w-5 h-5" />
+                      )}
+                    </button>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                  </div>
+                  {isUploading && (
+                    <div className="mt-2">
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>画像をアップロード中... {uploadProgress}%</span>
+                      </div>
+                      <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-primary-500 transition-all duration-300"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {errors.image && (
+                    <p className="mt-1 text-sm text-red-500">{errors.image}</p>
+                  )}
                   <p className="mt-1 text-xs text-gray-400">
-                    Markdown記法: **太字** *斜体* `コード` - リスト &gt; 引用
+                    Markdown記法: **太字** *斜体* `コード` - リスト &gt; 引用 | 画像: 右上ボタンまたはCtrl+V
                   </p>
                 </>
               )}
