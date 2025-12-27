@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useNotesStore } from '../stores/notesStore';
 import { useFirestore } from '../hooks/useFirestore';
 import type { UrlInfo } from '../types';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   X,
   Save,
@@ -12,6 +14,8 @@ import {
   Plus,
   Trash2,
   Link,
+  Eye,
+  Edit3,
 } from 'lucide-react';
 
 export const NoteModal = () => {
@@ -32,6 +36,7 @@ export const NoteModal = () => {
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [tagInput, setTagInput] = useState('');
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
 
   // タグの色候補
   const tagColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
@@ -96,6 +101,7 @@ export const NoteModal = () => {
     setErrors({});
     setTagInput('');
     setShowTagSuggestions(false);
+    setShowPreview(false);
   }, [modal.isOpen, modal.mode, modal.noteId, notes]);
 
   // メインカテゴリを取得
@@ -273,18 +279,63 @@ export const NoteModal = () => {
               )}
             </div>
 
-            {/* メモ（大きく表示） */}
+            {/* メモ（大きく表示・プレビュー付き） */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                メモ
-              </label>
-              <textarea
-                value={formData.content}
-                onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-                placeholder="メモの内容..."
-                rows={8}
-                className="input resize-none"
-              />
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700">
+                  メモ
+                </label>
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setShowPreview(false)}
+                    className={`px-3 py-1 text-xs flex items-center gap-1 ${
+                      !showPreview
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Edit3 className="w-3 h-3" />
+                    編集
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPreview(true)}
+                    className={`px-3 py-1 text-xs flex items-center gap-1 ${
+                      showPreview
+                        ? 'bg-primary-500 text-white'
+                        : 'bg-white text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Eye className="w-3 h-3" />
+                    プレビュー
+                  </button>
+                </div>
+              </div>
+              {showPreview ? (
+                <div className="min-h-[200px] p-4 border border-gray-200 rounded-lg bg-white prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
+                  {formData.content ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {formData.content}
+                    </ReactMarkdown>
+                  ) : (
+                    <p className="text-gray-400">プレビューする内容がありません</p>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <textarea
+                    value={formData.content}
+                    onChange={(e) => setFormData({ ...formData, content: e.target.value })}
+                    placeholder="メモの内容...&#10;&#10;Markdown記法が使えます:&#10;**太字** / *斜体*&#10;- リスト&#10;1. 番号リスト&#10;> 引用&#10;`コード`"
+                    rows={8}
+                    className="input resize-none font-mono text-sm"
+                  />
+                  <p className="mt-1 text-xs text-gray-400">
+                    Markdown記法: **太字** *斜体* `コード` - リスト &gt; 引用
+                  </p>
+                </>
+              )}
             </div>
 
             {/* URL（複数対応・タイトル付き） */}

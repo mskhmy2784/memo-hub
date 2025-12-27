@@ -3,6 +3,8 @@ import { useNotesStore } from '../stores/notesStore';
 import { useFirestore } from '../hooks/useFirestore';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   ArrowLeft,
   Edit,
@@ -204,10 +206,10 @@ export const NoteDetailPage = () => {
           {note.content && (
             <div className="mb-6">
               <h2 className="text-sm font-medium text-gray-500 mb-2">メモ</h2>
-              <div className="prose prose-gray max-w-none">
-                <p className="whitespace-pre-wrap text-gray-700">
+              <div className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {note.content}
-                </p>
+                </ReactMarkdown>
               </div>
             </div>
           )}
