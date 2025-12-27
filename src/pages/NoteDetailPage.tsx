@@ -47,10 +47,11 @@ export const NoteDetailPage = () => {
     ? `${parentCategory.name} > ${category?.name}`
     : category?.name || '';
 
-  const categoryType =
-    (category?.name === '仕事' ||
-      parentCategory?.name === '仕事')
+  const categoryType: 'work' | 'private' | 'common' =
+    (category?.name === '仕事' || parentCategory?.name === '仕事')
       ? 'work'
+      : (category?.name === '共通' || parentCategory?.name === '共通')
+      ? 'common'
       : 'private';
 
   // タグ情報
@@ -135,10 +136,12 @@ export const NoteDetailPage = () => {
                   ? 'bg-red-100 text-red-600'
                   : categoryType === 'work'
                   ? 'bg-blue-100 text-blue-600'
+                  : categoryType === 'common'
+                  ? 'bg-green-100 text-green-600'
                   : 'bg-pink-100 text-pink-600'
               }`}
             >
-              {note.url ? (
+              {note.urls && note.urls.length > 0 ? (
                 <ExternalLink className="w-6 h-6" />
               ) : (
                 <Folder className="w-6 h-6" />
@@ -151,7 +154,8 @@ export const NoteDetailPage = () => {
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`badge ${
-                    categoryType === 'work' ? 'badge-work' : 'badge-private'
+                    categoryType === 'work' ? 'badge-work' : 
+                    categoryType === 'common' ? 'badge-common' : 'badge-private'
                   }`}
                 >
                   {categoryPath}
@@ -166,20 +170,33 @@ export const NoteDetailPage = () => {
           </div>
 
           {/* URL */}
-          {note.url && (
+          {note.urls && note.urls.length > 0 && (
             <div className="mb-6">
-              <a
-                href={note.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-4 py-3 bg-primary-50 text-primary-700 rounded-lg hover:bg-primary-100 transition-colors group"
-              >
-                <ExternalLink className="w-5 h-5" />
-                <span className="truncate max-w-md">{note.url}</span>
-                <span className="text-xs opacity-60 group-hover:opacity-100">
-                  新しいタブで開く
-                </span>
-              </a>
+              <h2 className="text-sm font-medium text-gray-500 mb-2">
+                URL（{note.urls.length}件）
+              </h2>
+              <div className="space-y-2">
+                {note.urls.map((urlInfo: any, index: number) => (
+                  <a
+                    key={index}
+                    href={urlInfo.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 px-4 py-3 bg-primary-50 text-primary-700 rounded-lg hover:bg-primary-100 transition-colors group"
+                  >
+                    <ExternalLink className="w-5 h-5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      {urlInfo.title && (
+                        <span className="font-medium block truncate">{urlInfo.title}</span>
+                      )}
+                      <span className="text-sm opacity-80 truncate block">{urlInfo.url}</span>
+                    </div>
+                    <span className="text-xs opacity-60 group-hover:opacity-100 flex-shrink-0">
+                      新しいタブで開く
+                    </span>
+                  </a>
+                ))}
+              </div>
             </div>
           )}
 

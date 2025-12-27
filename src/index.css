@@ -62,17 +62,21 @@
   .badge-private {
     @apply bg-pink-100 text-pink-700;
   }
+
+  .badge-common {
+    @apply bg-green-100 text-green-700;
+  }
   
   .priority-high {
     @apply text-red-600 bg-red-50 border-red-200;
   }
   
   .priority-medium {
-    @apply text-amber-600 bg-amber-50 border-amber-200;
+    @apply text-yellow-600 bg-yellow-50 border-yellow-200;
   }
   
   .priority-low {
-    @apply text-gray-500 bg-gray-100 border-gray-200;
+    @apply text-blue-500 bg-blue-50 border-blue-200;
   }
   
   .sidebar-item {

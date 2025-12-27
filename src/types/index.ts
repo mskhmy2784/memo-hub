@@ -26,16 +26,23 @@ export interface Tag {
   createdAt: Date;
 }
 
+// URL情報
+export interface UrlInfo {
+  title: string;
+  url: string;
+}
+
 // メモ/URL統合型
 export interface Note {
   id: string;
   title: string;
   content: string;
-  url?: string;
+  urls: UrlInfo[]; // 最大5件
   categoryId: string;
   tags: string[];
   isFavorite: boolean;
   priority: 1 | 2 | 3; // 1:高 2:中 3:低
+  order: number; // 表示順序
   createdAt: Date;
   updatedAt: Date;
 }
@@ -50,7 +57,7 @@ export interface FilterOptions {
 }
 
 // ソートオプション
-export type SortField = 'createdAt' | 'updatedAt' | 'title' | 'priority';
+export type SortField = 'createdAt' | 'updatedAt' | 'title' | 'priority' | 'order';
 export type SortOrder = 'asc' | 'desc';
 
 export interface SortOptions {

@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useNotesStore } from '../stores/notesStore';
 import { useFirestore } from '../hooks/useFirestore';
 import { useAuth } from '../hooks/useAuth';
-import type { Note, SortField } from '../types';
+import type { Note, SortField, UrlInfo } from '../types';
 import {
   Search,
   Plus,
@@ -22,9 +22,28 @@ import {
   Briefcase,
   Home as HomeIcon,
   ArrowLeft,
+  GripVertical,
+  Pin,
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { ja } from 'date-fns/locale';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import type { DragEndEvent } from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 export const NotesPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,11 +60,10 @@ export const NotesPage = () => {
     setSort,
     openModal,
     toggleSelectNote,
-    selectAllNotes,
     clearSelection,
     isLoading,
   } = useNotesStore();
-  const { deleteNotes, updateNote } = useFirestore();
+  const { deleteNotes, updateNote, reorderNotes } = useFirestore();
 
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
@@ -53,7 +71,7 @@ export const NotesPage = () => {
   // URLパラメータからフィルタを設定
   useEffect(() => {
     const category = searchParams.get('category');
-    const favorites = searchParams.get('favorites');
+    const favorites = searchParams.get('favorite');
     const priority = searchParams.get('priority');
 
     if (category === 'work') {
@@ -62,6 +80,9 @@ export const NotesPage = () => {
     } else if (category === 'private') {
       const privateCategory = categories.find((c) => c.name === 'プライベート' && c.type === 'main');
       if (privateCategory) setFilter({ categoryId: privateCategory.id });
+    } else if (category === 'common') {
+      const commonCategory = categories.find((c) => c.name === '共通' && c.type === 'main');
+      if (commonCategory) setFilter({ categoryId: commonCategory.id });
     }
 
     if (favorites === 'true') {
@@ -83,29 +104,36 @@ export const NotesPage = () => {
   const getSubCategories = (parentId: string) =>
     categories.filter((c) => c.type === 'sub' && c.parentId === parentId);
 
-  // フィルタリング & ソート
+  // フィルタリングされたメモ
   const filteredNotes = useMemo(() => {
     let result = [...notes];
 
-    // 検索
+    // 検索フィルタ
     if (filter.search) {
-      const searchLower = filter.search.toLowerCase();
+      const query = filter.search.toLowerCase();
       result = result.filter(
         (n) =>
-          n.title.toLowerCase().includes(searchLower) ||
-          n.content.toLowerCase().includes(searchLower) ||
-          n.url?.toLowerCase().includes(searchLower)
+          n.title.toLowerCase().includes(query) ||
+          n.content.toLowerCase().includes(query) ||
+          (n.urls && n.urls.some(u => 
+            u.url.toLowerCase().includes(query) || 
+            u.title.toLowerCase().includes(query)
+          ))
       );
     }
 
     // カテゴリフィルタ
     if (filter.categoryId) {
-      const category = categories.find((c) => c.id === filter.categoryId);
-      if (category?.type === 'main') {
+      const selectedCategory = categories.find((c) => c.id === filter.categoryId);
+      if (selectedCategory?.type === 'main') {
         // メインカテゴリの場合、サブカテゴリも含める
-        const subCategoryIds = getSubCategories(category.id).map((c) => c.id);
+        const subCategoryIds = categories
+          .filter((c) => c.parentId === filter.categoryId)
+          .map((c) => c.id);
         result = result.filter(
-          (n) => n.categoryId === filter.categoryId || subCategoryIds.includes(n.categoryId)
+          (n) =>
+            n.categoryId === filter.categoryId ||
+            subCategoryIds.includes(n.categoryId)
         );
       } else {
         result = result.filter((n) => n.categoryId === filter.categoryId);
@@ -120,7 +148,7 @@ export const NotesPage = () => {
     }
 
     // 重要度フィルタ
-    if (filter.priority !== null) {
+    if (filter.priority) {
       result = result.filter((n) => n.priority === filter.priority);
     }
 
@@ -142,6 +170,9 @@ export const NotesPage = () => {
         case 'createdAt':
           comparison = a.createdAt.getTime() - b.createdAt.getTime();
           break;
+        case 'order':
+          comparison = a.order - b.order;
+          break;
         case 'updatedAt':
         default:
           comparison = a.updatedAt.getTime() - b.updatedAt.getTime();
@@ -160,17 +191,21 @@ export const NotesPage = () => {
   };
 
   // カテゴリタイプを取得
-  const getCategoryType = (categoryId: string): 'work' | 'private' | null => {
+  const getCategoryType = (categoryId: string): 'work' | 'private' | 'common' | null => {
     const category = categories.find((c) => c.id === categoryId);
     if (!category) return null;
 
     if (category.type === 'main') {
-      return category.name === '仕事' ? 'work' : 'private';
+      if (category.name === '仕事') return 'work';
+      if (category.name === 'プライベート') return 'private';
+      if (category.name === '共通') return 'common';
     }
 
     if (category.parentId) {
       const parent = categories.find((c) => c.id === category.parentId);
-      return parent?.name === '仕事' ? 'work' : 'private';
+      if (parent?.name === '仕事') return 'work';
+      if (parent?.name === 'プライベート') return 'private';
+      if (parent?.name === '共通') return 'common';
     }
 
     return null;
@@ -187,31 +222,33 @@ export const NotesPage = () => {
 
   // エクスポート
   const handleExport = () => {
-    const notesToExport = selectedNoteIds.length > 0
-      ? notes.filter((n) => selectedNoteIds.includes(n.id))
-      : filteredNotes;
+    const notesToExport = filteredNotes.filter((n) =>
+      selectedNoteIds.length > 0 ? selectedNoteIds.includes(n.id) : true
+    );
 
-    const exportData = notesToExport.map((n) => ({
+    const data = notesToExport.map((n) => ({
       title: n.title,
       content: n.content,
-      url: n.url,
+      urls: n.urls,
       category: getCategoryName(n.categoryId),
-      tags: n.tags.map((tagId) => tags.find((t) => t.id === tagId)?.name || ''),
+      tags: n.tags.map((tagId) => {
+        const tag = tags.find((t) => t.id === tagId);
+        return tag?.name || '';
+      }),
       priority: n.priority,
       isFavorite: n.isFavorite,
-      createdAt: format(n.createdAt, 'yyyy-MM-dd HH:mm:ss'),
-      updatedAt: format(n.updatedAt, 'yyyy-MM-dd HH:mm:ss'),
+      createdAt: format(n.createdAt, 'yyyy-MM-dd HH:mm'),
+      updatedAt: format(n.updatedAt, 'yyyy-MM-dd HH:mm'),
     }));
 
-    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: 'application/json',
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `memo-export-${format(new Date(), 'yyyyMMdd-HHmmss')}.json`;
+    a.download = `notes-${format(new Date(), 'yyyyMMdd')}.json`;
     a.click();
-    URL.revokeObjectURL(url);
   };
 
   // お気に入り切り替え
@@ -219,12 +256,44 @@ export const NotesPage = () => {
     await updateNote(note.id, { isFavorite: !note.isFavorite });
   };
 
+  // ソートオプション
   const sortOptions: { field: SortField; label: string }[] = [
+    { field: 'order', label: 'カスタム順' },
     { field: 'updatedAt', label: '更新日' },
     { field: 'createdAt', label: '作成日' },
     { field: 'title', label: 'タイトル' },
     { field: 'priority', label: '重要度' },
   ];
+
+  // ドラッグ＆ドロップセンサー
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // ドラッグ終了時の処理
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = filteredNotes.findIndex((n) => n.id === active.id);
+      const newIndex = filteredNotes.findIndex((n) => n.id === over.id);
+
+      const newOrder = arrayMove(filteredNotes, oldIndex, newIndex);
+      const noteIds = newOrder.map((n) => n.id);
+      
+      await reorderNotes(noteIds);
+    }
+  };
+
+  // カスタム順かどうか
+  const isCustomOrder = sort.field === 'order';
 
   if (isLoading) {
     return (
@@ -235,419 +304,580 @@ export const NotesPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* サイドバー */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex-shrink-0 hidden md:flex flex-col">
-        <div className="p-4 border-b border-gray-100">
-          <Link to="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="w-4 h-4" />
-            ダッシュボード
-          </Link>
-        </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* ヘッダー */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link
+                to="/"
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+              >
+                <ArrowLeft className="w-5 h-5" />
+                <span className="hidden sm:inline">ダッシュボード</span>
+              </Link>
+              <div className="h-6 w-px bg-gray-200" />
+              <h1 className="text-xl font-semibold text-gray-900">すべてのメモ</h1>
+            </div>
 
-        <nav className="flex-1 p-4 space-y-1 overflow-auto">
-          {/* すべて */}
-          <button
-            onClick={() => {
-              setFilter({ categoryId: null });
-              setSearchParams({});
-            }}
-            className={`sidebar-item w-full ${!filter.categoryId ? 'active' : ''}`}
-          >
-            <FileText className="w-4 h-4" />
-            すべてのメモ
-            <span className="ml-auto text-xs text-gray-400">{notes.length}</span>
-          </button>
-
-          {/* お気に入り */}
-          <button
-            onClick={() => setFilter({ showFavoritesOnly: !filter.showFavoritesOnly })}
-            className={`sidebar-item w-full ${filter.showFavoritesOnly ? 'active' : ''}`}
-          >
-            <Star className={`w-4 h-4 ${filter.showFavoritesOnly ? 'fill-amber-500 text-amber-500' : ''}`} />
-            お気に入り
-            <span className="ml-auto text-xs text-gray-400">
-              {notes.filter((n) => n.isFavorite).length}
-            </span>
-          </button>
-
-          <div className="pt-4 pb-2">
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              カテゴリ
-            </span>
+            <button
+              onClick={() => openModal('create')}
+              className="btn btn-primary"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">新規追加</span>
+            </button>
           </div>
+        </div>
+      </header>
 
-          {/* カテゴリツリー */}
-          {mainCategories.map((mainCat) => {
-            const subCategories = getSubCategories(mainCat.id);
-            const isExpanded = expandedCategories.includes(mainCat.id);
-            const isWork = mainCat.name === '仕事';
-            const count = notes.filter((n) => {
-              if (n.categoryId === mainCat.id) return true;
-              return subCategories.some((sub) => sub.id === n.categoryId);
-            }).length;
-
-            return (
-              <div key={mainCat.id}>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+        <div className="flex gap-6">
+          {/* サイドバー */}
+          <aside className="hidden lg:block w-64 flex-shrink-0">
+            <div className="card p-4 sticky top-24">
+              <h2 className="font-medium text-gray-900 mb-4">カテゴリ</h2>
+              <nav className="space-y-1">
                 <button
                   onClick={() => {
-                    setFilter({ categoryId: mainCat.id });
-                    if (subCategories.length > 0) {
-                      setExpandedCategories((prev) =>
-                        isExpanded
-                          ? prev.filter((id) => id !== mainCat.id)
-                          : [...prev, mainCat.id]
-                      );
-                    }
+                    setFilter({ categoryId: null });
+                    setSearchParams({});
                   }}
-                  className={`sidebar-item w-full ${
-                    filter.categoryId === mainCat.id ? 'active' : ''
+                  className={`w-full sidebar-item ${
+                    !filter.categoryId ? 'active' : ''
                   }`}
                 >
-                  {subCategories.length > 0 ? (
-                    isExpanded ? (
-                      <ChevronDown className="w-4 h-4" />
-                    ) : (
-                      <ChevronRight className="w-4 h-4" />
-                    )
-                  ) : isWork ? (
-                    <Briefcase className="w-4 h-4" />
-                  ) : (
-                    <HomeIcon className="w-4 h-4" />
-                  )}
-                  {mainCat.name}
-                  <span className="ml-auto text-xs text-gray-400">{count}</span>
-                </button>
-
-                {isExpanded && subCategories.length > 0 && (
-                  <div className="ml-4 space-y-1">
-                    {subCategories.map((subCat) => {
-                      const subCount = notes.filter((n) => n.categoryId === subCat.id).length;
-                      return (
-                        <button
-                          key={subCat.id}
-                          onClick={() => setFilter({ categoryId: subCat.id })}
-                          className={`sidebar-item w-full text-sm ${
-                            filter.categoryId === subCat.id ? 'active' : ''
-                          }`}
-                        >
-                          <span className="w-4" />
-                          {subCat.name}
-                          <span className="ml-auto text-xs text-gray-400">{subCount}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          <div className="pt-4 pb-2">
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">
-              タグ
-            </span>
-          </div>
-
-          {/* タグリスト */}
-          <div className="space-y-1">
-            {tags.map((tag) => {
-              const isActive = filter.tagIds.includes(tag.id);
-              const count = notes.filter((n) => n.tags.includes(tag.id)).length;
-              return (
-                <button
-                  key={tag.id}
-                  onClick={() => {
-                    setFilter({
-                      tagIds: isActive
-                        ? filter.tagIds.filter((id) => id !== tag.id)
-                        : [...filter.tagIds, tag.id],
-                    });
-                  }}
-                  className={`sidebar-item w-full ${isActive ? 'active' : ''}`}
-                >
-                  <span
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: tag.color }}
-                  />
-                  {tag.name}
-                  <span className="ml-auto text-xs text-gray-400">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </nav>
-
-        {/* 設定リンク */}
-        <div className="p-4 border-t border-gray-100">
-          <Link to="/settings" className="sidebar-item w-full">
-            設定
-          </Link>
-        </div>
-      </aside>
-
-      {/* メインコンテンツ */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* ヘッダー */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-20">
-          <div className="px-4 sm:px-6 py-4">
-            <div className="flex items-center gap-4">
-              {/* 検索 */}
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="タイトル、メモ、URLで検索..."
-                  value={filter.search}
-                  onChange={(e) => setFilter({ search: e.target.value })}
-                  className="input pl-10"
-                />
-              </div>
-
-              {/* ソート */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowSortMenu(!showSortMenu)}
-                  className="btn btn-secondary"
-                >
-                  {sort.order === 'asc' ? (
-                    <SortAsc className="w-4 h-4" />
-                  ) : (
-                    <SortDesc className="w-4 h-4" />
-                  )}
-                  <span className="hidden sm:inline">
-                    {sortOptions.find((o) => o.field === sort.field)?.label}
+                  <FileText className="w-4 h-4" />
+                  すべて
+                  <span className="ml-auto text-sm text-gray-400">
+                    {notes.length}
                   </span>
                 </button>
 
-                {showSortMenu && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setShowSortMenu(false)}
-                    />
-                    <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-20">
-                      {sortOptions.map((option) => (
-                        <button
-                          key={option.field}
-                          onClick={() => {
-                            if (sort.field === option.field) {
-                              setSort({ order: sort.order === 'asc' ? 'desc' : 'asc' });
-                            } else {
-                              setSort({ field: option.field, order: 'desc' });
-                            }
-                            setShowSortMenu(false);
-                          }}
-                          className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between"
-                        >
-                          {option.label}
-                          {sort.field === option.field && (
-                            <span className="text-primary-600">
-                              {sort.order === 'asc' ? '↑' : '↓'}
-                            </span>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
+                {mainCategories.map((category) => {
+                  const subCategories = getSubCategories(category.id);
+                  const isExpanded = expandedCategories.includes(category.id);
+                  const count = notes.filter(
+                    (n) =>
+                      n.categoryId === category.id ||
+                      subCategories.some((sc) => sc.id === n.categoryId)
+                  ).length;
 
-              {/* 新規追加 */}
-              <button onClick={() => openModal('create')} className="btn btn-primary">
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">追加</span>
-              </button>
-            </div>
-
-            {/* 選択時のアクションバー */}
-            {selectedNoteIds.length > 0 && (
-              <div className="flex items-center gap-4 mt-4 p-3 bg-primary-50 rounded-lg">
-                <span className="text-sm text-primary-700">
-                  {selectedNoteIds.length}件選択中
-                </span>
-                <div className="flex-1" />
-                <button
-                  onClick={handleExport}
-                  className="btn btn-secondary text-sm py-1.5"
-                >
-                  <Download className="w-4 h-4" />
-                  エクスポート
-                </button>
-                <button
-                  onClick={handleBulkDelete}
-                  className="btn btn-danger text-sm py-1.5"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  削除
-                </button>
-                <button
-                  onClick={clearSelection}
-                  className="btn btn-ghost text-sm py-1.5"
-                >
-                  <X className="w-4 h-4" />
-                  キャンセル
-                </button>
-              </div>
-            )}
-          </div>
-        </header>
-
-        {/* メモ一覧 */}
-        <main className="flex-1 overflow-auto p-4 sm:p-6">
-          {filteredNotes.length === 0 ? (
-            <div className="text-center py-16">
-              <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-500 mb-4">メモが見つかりません</p>
-              <button onClick={() => openModal('create')} className="btn btn-primary">
-                <Plus className="w-4 h-4" />
-                新規メモを作成
-              </button>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {/* 全選択 */}
-              <div className="flex items-center gap-2 mb-4">
-                <button
-                  onClick={() => {
-                    if (selectedNoteIds.length === filteredNotes.length) {
-                      clearSelection();
-                    } else {
-                      selectAllNotes(filteredNotes.map((n) => n.id));
+                  const getCategoryIcon = () => {
+                    switch (category.name) {
+                      case '仕事':
+                        return <Briefcase className="w-4 h-4 text-blue-500" />;
+                      case 'プライベート':
+                        return <HomeIcon className="w-4 h-4 text-pink-500" />;
+                      case '共通':
+                        return <Pin className="w-4 h-4 text-green-500" />;
+                      default:
+                        return <span>{category.icon}</span>;
                     }
-                  }}
-                  className="text-sm text-gray-500 hover:text-gray-700"
-                >
-                  {selectedNoteIds.length === filteredNotes.length
-                    ? 'すべて解除'
-                    : 'すべて選択'}
-                </button>
-                <span className="text-sm text-gray-400">
-                  ({filteredNotes.length}件)
-                </span>
-              </div>
+                  };
 
-              {filteredNotes.map((note) => {
-                const isSelected = selectedNoteIds.includes(note.id);
-                const categoryType = getCategoryType(note.categoryId);
-
-                return (
-                  <div
-                    key={note.id}
-                    className={`card p-4 flex items-center gap-4 group ${
-                      isSelected ? 'ring-2 ring-primary-500 bg-primary-50' : ''
-                    }`}
-                  >
-                    {/* チェックボックス */}
-                    <button
-                      onClick={() => toggleSelectNote(note.id)}
-                      className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                        isSelected
-                          ? 'bg-primary-500 border-primary-500 text-white'
-                          : 'border-gray-300 hover:border-primary-500'
-                      }`}
-                    >
-                      {isSelected && <Check className="w-3 h-3" />}
-                    </button>
-
-                    {/* アイコン */}
-                    <div
-                      className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                        note.priority === 1
-                          ? 'bg-red-100 text-red-600'
-                          : categoryType === 'work'
-                          ? 'bg-blue-100 text-blue-600'
-                          : 'bg-pink-100 text-pink-600'
-                      }`}
-                    >
-                      {note.url ? (
-                        <ExternalLink className="w-5 h-5" />
-                      ) : (
-                        <FileText className="w-5 h-5" />
-                      )}
-                    </div>
-
-                    {/* コンテンツ */}
-                    <div
-                      className="flex-1 min-w-0 cursor-pointer"
-                      onClick={() => navigate(`/notes/${note.id}`)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium text-gray-900 truncate">
-                          {note.title}
-                        </h3>
-                        {note.priority === 1 && (
-                          <span className="badge priority-high">高</span>
+                  return (
+                    <div key={category.id}>
+                      <div className="flex items-center">
+                        {subCategories.length > 0 && (
+                          <button
+                            onClick={() =>
+                              setExpandedCategories((prev) =>
+                                isExpanded
+                                  ? prev.filter((id) => id !== category.id)
+                                  : [...prev, category.id]
+                              )
+                            }
+                            className="p-1 hover:bg-gray-100 rounded"
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="w-4 h-4 text-gray-400" />
+                            ) : (
+                              <ChevronRight className="w-4 h-4 text-gray-400" />
+                            )}
+                          </button>
                         )}
-                        {note.priority === 2 && (
-                          <span className="badge priority-medium">中</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span
-                          className={`badge ${
-                            categoryType === 'work' ? 'badge-work' : 'badge-private'
+                        <button
+                          onClick={() => setFilter({ categoryId: category.id })}
+                          className={`flex-1 sidebar-item ${
+                            filter.categoryId === category.id ? 'active' : ''
                           }`}
                         >
-                          {getCategoryName(note.categoryId)}
-                        </span>
-                        {note.tags.slice(0, 2).map((tagId) => {
-                          const tag = tags.find((t) => t.id === tagId);
-                          if (!tag) return null;
-                          return (
-                            <span
-                              key={tagId}
-                              className="badge"
-                              style={{
-                                backgroundColor: `${tag.color}20`,
-                                color: tag.color,
-                              }}
-                            >
-                              {tag.name}
-                            </span>
-                          );
-                        })}
-                        {note.tags.length > 2 && (
-                          <span className="text-xs text-gray-400">
-                            +{note.tags.length - 2}
+                          {getCategoryIcon()}
+                          {category.name}
+                          <span className="ml-auto text-sm text-gray-400">
+                            {count}
                           </span>
-                        )}
+                        </button>
                       </div>
+                      {isExpanded &&
+                        subCategories.map((sub) => (
+                          <button
+                            key={sub.id}
+                            onClick={() => setFilter({ categoryId: sub.id })}
+                            className={`w-full sidebar-item pl-10 ${
+                              filter.categoryId === sub.id ? 'active' : ''
+                            }`}
+                          >
+                            {sub.name}
+                            <span className="ml-auto text-sm text-gray-400">
+                              {notes.filter((n) => n.categoryId === sub.id).length}
+                            </span>
+                          </button>
+                        ))}
                     </div>
+                  );
+                })}
+              </nav>
 
-                    {/* 日時 */}
-                    <div className="hidden sm:block text-sm text-gray-400 flex-shrink-0">
-                      {formatDistanceToNow(note.updatedAt, { addSuffix: true, locale: ja })}
-                    </div>
+              <div className="border-t border-gray-200 mt-4 pt-4">
+                <button
+                  onClick={() => setFilter({ showFavoritesOnly: !filter.showFavoritesOnly })}
+                  className={`w-full sidebar-item ${
+                    filter.showFavoritesOnly ? 'active' : ''
+                  }`}
+                >
+                  <Star className="w-4 h-4 text-amber-500" />
+                  お気に入り
+                </button>
+              </div>
 
-                    {/* お気に入りボタン */}
-                    <button
-                      onClick={() => handleToggleFavorite(note)}
-                      className="p-2 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0"
-                    >
-                      <Star
-                        className={`w-4 h-4 ${
-                          note.isFavorite
-                            ? 'fill-amber-500 text-amber-500'
-                            : 'text-gray-400'
+              {/* タグフィルタ */}
+              {tags.length > 0 && (
+                <div className="border-t border-gray-200 mt-4 pt-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2">タグ</h3>
+                  <div className="flex flex-wrap gap-1">
+                    {tags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        onClick={() => {
+                          const newTagIds = filter.tagIds.includes(tag.id)
+                            ? filter.tagIds.filter((id) => id !== tag.id)
+                            : [...filter.tagIds, tag.id];
+                          setFilter({ tagIds: newTagIds });
+                        }}
+                        className={`px-2 py-1 rounded text-xs font-medium transition-all ${
+                          filter.tagIds.includes(tag.id)
+                            ? 'ring-2 ring-offset-1'
+                            : 'opacity-60 hover:opacity-100'
                         }`}
-                      />
+                        style={{
+                          backgroundColor: `${tag.color}20`,
+                          color: tag.color,
+                        }}
+                      >
+                        {tag.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </aside>
+
+          {/* メインコンテンツ */}
+          <main className="flex-1 min-w-0">
+            {/* 検索・フィルタバー */}
+            <div className="card p-4 mb-4">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={filter.search}
+                    onChange={(e) => setFilter({ search: e.target.value })}
+                    placeholder="検索..."
+                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  />
+                  {filter.search && (
+                    <button
+                      onClick={() => setFilter({ search: '' })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowSortMenu(!showSortMenu)}
+                      className="btn btn-secondary flex items-center gap-2"
+                    >
+                      {sort.order === 'asc' ? (
+                        <SortAsc className="w-4 h-4" />
+                      ) : (
+                        <SortDesc className="w-4 h-4" />
+                      )}
+                      <span className="hidden sm:inline">
+                        {sortOptions.find((o) => o.field === sort.field)?.label}
+                      </span>
+                      <ChevronDown className="w-4 h-4" />
                     </button>
 
-                    {/* アクション */}
-                    <button
-                      onClick={() => openModal('edit', note.id)}
-                      className="p-2 rounded-lg hover:bg-gray-100 transition-colors flex-shrink-0 opacity-0 group-hover:opacity-100"
-                    >
-                      <Edit className="w-4 h-4 text-gray-400" />
-                    </button>
+                    {showSortMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setShowSortMenu(false)}
+                        />
+                        <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
+                          {sortOptions.map((option) => (
+                            <button
+                              key={option.field}
+                              onClick={() => {
+                                if (sort.field === option.field) {
+                                  setSort({
+                                    order: sort.order === 'asc' ? 'desc' : 'asc',
+                                  });
+                                } else {
+                                  setSort({
+                                    field: option.field,
+                                    order: option.field === 'order' ? 'asc' : 'desc',
+                                  });
+                                }
+                                setShowSortMenu(false);
+                              }}
+                              className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between ${
+                                sort.field === option.field
+                                  ? 'text-primary-600 bg-primary-50'
+                                  : 'text-gray-700'
+                              }`}
+                            >
+                              {option.label}
+                              {sort.field === option.field && (
+                                <span>
+                                  {sort.order === 'asc' ? '↑' : '↓'}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
-                );
-              })}
+                </div>
+              </div>
+
+              {/* 選択中のアクション */}
+              {selectedNoteIds.length > 0 && (
+                <div className="flex items-center gap-4 mt-4 p-3 bg-primary-50 rounded-lg">
+                  <span className="text-sm font-medium text-primary-700">
+                    {selectedNoteIds.length}件選択中
+                  </span>
+                  <div className="flex-1" />
+                  <button
+                    onClick={clearSelection}
+                    className="text-sm text-gray-500 hover:text-gray-700"
+                  >
+                    選択解除
+                  </button>
+                  <button
+                    onClick={handleExport}
+                    className="btn btn-secondary text-sm"
+                  >
+                    <Download className="w-4 h-4" />
+                    エクスポート
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="btn bg-red-500 hover:bg-red-600 text-white text-sm"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    削除
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* カスタム順の説明 */}
+            {isCustomOrder && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700 flex items-center gap-2">
+                <GripVertical className="w-4 h-4" />
+                ドラッグ＆ドロップでメモの順序を変更できます
+              </div>
+            )}
+
+            {/* メモリスト */}
+            {filteredNotes.length === 0 ? (
+              <div className="card p-12 text-center">
+                <FileText className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 mb-4">
+                  {filter.search || filter.categoryId || filter.tagIds.length > 0
+                    ? '条件に一致するメモがありません'
+                    : 'メモがありません'}
+                </p>
+                <button
+                  onClick={() => openModal('create')}
+                  className="btn btn-primary"
+                >
+                  <Plus className="w-4 h-4" />
+                  最初のメモを作成
+                </button>
+              </div>
+            ) : (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={filteredNotes.map((n) => n.id)}
+                  strategy={verticalListSortingStrategy}
+                  disabled={!isCustomOrder}
+                >
+                  <div className="space-y-1">
+                    {filteredNotes.map((note) => {
+                      const categoryType = getCategoryType(note.categoryId);
+                      const isSelected = selectedNoteIds.includes(note.id);
+
+                      return (
+                        <SortableNoteItem
+                          key={note.id}
+                          note={note}
+                          categoryType={categoryType}
+                          isSelected={isSelected}
+                          isCustomOrder={isCustomOrder}
+                          getCategoryName={getCategoryName}
+                          tags={tags}
+                          navigate={navigate}
+                          toggleSelectNote={toggleSelectNote}
+                          handleToggleFavorite={handleToggleFavorite}
+                          openModal={openModal}
+                        />
+                      );
+                    })}
+                  </div>
+                </SortableContext>
+              </DndContext>
+            )}
+
+            {/* 件数表示 */}
+            {filteredNotes.length > 0 && (
+              <div className="mt-4 text-center text-sm text-gray-500">
+                {filteredNotes.length}件のメモ
+              </div>
+            )}
+          </main>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ソート可能なメモアイテムコンポーネント
+const SortableNoteItem = ({
+  note,
+  categoryType,
+  isSelected,
+  isCustomOrder,
+  getCategoryName,
+  tags,
+  navigate,
+  toggleSelectNote,
+  handleToggleFavorite,
+  openModal,
+}: {
+  note: Note;
+  categoryType: 'work' | 'private' | 'common' | null;
+  isSelected: boolean;
+  isCustomOrder: boolean;
+  getCategoryName: (id: string) => string;
+  tags: any[];
+  navigate: (path: string) => void;
+  toggleSelectNote: (id: string) => void;
+  handleToggleFavorite: (note: Note) => void;
+  openModal: (mode: 'create' | 'edit', id?: string) => void;
+}) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: note.id, disabled: !isCustomOrder });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const noteTags = note.tags
+    .map((tagId) => tags.find((t: any) => t.id === tagId))
+    .filter(Boolean);
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`card px-3 h-12 flex items-center gap-2 hover:shadow-md transition-all ${
+        isSelected ? 'ring-2 ring-primary-500 bg-primary-50' : ''
+      } ${isDragging ? 'shadow-lg' : ''}`}
+    >
+      {/* ドラッグハンドル */}
+      {isCustomOrder && (
+        <div
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing p-0.5 hover:bg-gray-100 rounded"
+        >
+          <GripVertical className="w-4 h-4 text-gray-400" />
+        </div>
+      )}
+
+      {/* 選択チェックボックス */}
+      <button
+        onClick={() => toggleSelectNote(note.id)}
+        className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${
+          isSelected
+            ? 'bg-primary-500 border-primary-500 text-white'
+            : 'border-gray-300 hover:border-gray-400'
+        }`}
+      >
+        {isSelected && <Check className="w-2.5 h-2.5" />}
+      </button>
+
+      {/* アイコン */}
+      <div
+        className={`w-7 h-7 rounded flex items-center justify-center flex-shrink-0 ${
+          note.priority === 1
+            ? 'bg-red-100 text-red-600'
+            : categoryType === 'work'
+            ? 'bg-blue-100 text-blue-600'
+            : categoryType === 'common'
+            ? 'bg-green-100 text-green-600'
+            : 'bg-pink-100 text-pink-600'
+        }`}
+      >
+        {note.urls && note.urls.length > 0 ? (
+          <ExternalLink className="w-3.5 h-3.5" />
+        ) : (
+          <FileText className="w-3.5 h-3.5" />
+        )}
+      </div>
+
+      {/* コンテンツ */}
+      <div
+        className="flex-1 min-w-0 cursor-pointer"
+        onClick={() => navigate(`/notes/${note.id}`)}
+      >
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium text-gray-900 truncate text-sm">
+            {note.title}
+          </h3>
+          {note.priority === 1 && (
+            <span className="badge priority-high text-xs">高</span>
+          )}
+          {note.priority === 2 && (
+            <span className="badge priority-medium text-xs">中</span>
+          )}
+          {note.priority === 3 && (
+            <span className="badge priority-low text-xs">低</span>
+          )}
+          <span
+            className={`text-xs ${
+              categoryType === 'work' ? 'text-blue-600' : 
+              categoryType === 'common' ? 'text-green-600' : 'text-pink-600'
+            }`}
+          >
+            {getCategoryName(note.categoryId)}
+          </span>
+          {noteTags.length > 0 && (
+            <div className="flex gap-1">
+              {noteTags.slice(0, 2).map((tag: any) => (
+                <span
+                  key={tag.id}
+                  className="px-1.5 py-0 rounded text-xs"
+                  style={{
+                    backgroundColor: `${tag.color}20`,
+                    color: tag.color,
+                  }}
+                >
+                  {tag.name}
+                </span>
+              ))}
+              {noteTags.length > 2 && (
+                <span className="text-xs text-gray-400">
+                  +{noteTags.length - 2}
+                </span>
+              )}
             </div>
           )}
-        </main>
+        </div>
       </div>
+
+      {/* URLジャンプボタン */}
+      {note.urls && note.urls.length > 0 && (
+        <div className="flex-shrink-0">
+          {note.urls.length === 1 ? (
+            <a
+              href={(note.urls[0] as UrlInfo).url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              title={(note.urls[0] as UrlInfo).title || (note.urls[0] as UrlInfo).url}
+            >
+              <ExternalLink className="w-4 h-4" />
+            </a>
+          ) : (
+            <div className="relative group/url">
+              <button
+                className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-0.5"
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span className="text-xs">{note.urls.length}</span>
+              </button>
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 opacity-0 invisible group-hover/url:opacity-100 group-hover/url:visible transition-all">
+                {note.urls.map((urlInfo: UrlInfo, idx: number) => (
+                  <a
+                    key={idx}
+                    href={urlInfo.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <span className="truncate">{urlInfo.title || urlInfo.url}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 日時 */}
+      <div className="hidden sm:block text-xs text-gray-400 flex-shrink-0">
+        {formatDistanceToNow(note.updatedAt, { addSuffix: true, locale: ja })}
+      </div>
+
+      {/* お気に入りボタン */}
+      <button
+        onClick={() => handleToggleFavorite(note)}
+        className="p-1.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
+      >
+        <Star
+          className={`w-4 h-4 ${
+            note.isFavorite
+              ? 'fill-amber-500 text-amber-500'
+              : 'text-gray-400'
+          }`}
+        />
+      </button>
+
+      {/* 編集ボタン */}
+      <button
+        onClick={() => openModal('edit', note.id)}
+        className="p-1.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
+      >
+        <Edit className="w-4 h-4 text-gray-400" />
+      </button>
     </div>
   );
 };

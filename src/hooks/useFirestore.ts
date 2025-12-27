@@ -5,6 +5,7 @@ import {
   addDoc,
   updateDoc,
   deleteDoc,
+  setDoc,
   onSnapshot,
   query,
   orderBy,
@@ -14,7 +15,7 @@ import {
 import { db } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import { useNotesStore } from '../stores/notesStore';
-import type { Note, Category, Tag, FirestoreNote, FirestoreCategory, FirestoreTag } from '../types';
+import type { Note, Category, Tag, FirestoreCategory, FirestoreTag } from '../types';
 
 // FirestoreタイムスタンプをDateに変換
 const convertTimestamp = (timestamp: any): Date => {
@@ -33,8 +34,18 @@ const setupInitialData = async (userId: string) => {
 
   // 初期カテゴリ
   const categoriesRef = collection(db, `users/${userId}/categories`);
+  const commonCategoryRef = doc(categoriesRef);
   const workCategoryRef = doc(categoriesRef);
   const privateCategoryRef = doc(categoriesRef);
+
+  batch.set(commonCategoryRef, {
+    name: '共通',
+    type: 'main',
+    parentId: null,
+    order: 0,
+    icon: '📌',
+    createdAt: Timestamp.now(),
+  });
 
   batch.set(workCategoryRef, {
     name: '仕事',
@@ -107,11 +118,36 @@ export const useFirestore = () => {
     const notesQuery = query(notesRef, orderBy('updatedAt', 'desc'));
     const unsubNotes = onSnapshot(notesQuery, (snapshot) => {
       const notes: Note[] = snapshot.docs.map((doc) => {
-        const data = doc.data() as FirestoreNote;
+        const data = doc.data() as any;
+        
+        // 後方互換性: 古い形式を新しい形式(UrlInfo[])に変換
+        let urls: { title: string; url: string }[] = [];
+        if (data.urls && Array.isArray(data.urls)) {
+          urls = data.urls.map((item: any) => {
+            if (typeof item === 'string') {
+              // 古い形式: string[]
+              return { title: '', url: item };
+            } else if (item && typeof item === 'object' && item.url) {
+              // 新しい形式: UrlInfo[]
+              return { title: item.title || '', url: item.url };
+            }
+            return { title: '', url: '' };
+          }).filter((u: any) => u.url);
+        } else if (data.url && typeof data.url === 'string') {
+          // 最古の形式: 単一url
+          urls = [{ title: '', url: data.url }];
+        }
+        
+        // orderがない場合はcreatedAtのタイムスタンプを使用
+        const createdAt = convertTimestamp(data.createdAt);
+        const order = data.order ?? createdAt.getTime();
+        
         return {
           ...data,
           id: doc.id,
-          createdAt: convertTimestamp(data.createdAt),
+          urls,
+          order,
+          createdAt,
           updatedAt: convertTimestamp(data.updatedAt),
         };
       });
@@ -135,7 +171,21 @@ export const useFirestore = () => {
       if (categories.length === 0) {
         await setupInitialData(userId);
       } else {
-        setCategories(categories);
+        // 既存ユーザー向け: 共通カテゴリがなければ追加
+        const hasCommonCategory = categories.some(c => c.name === '共通' && c.type === 'main');
+        if (!hasCommonCategory) {
+          const commonCategoryRef = doc(categoriesRef);
+          await setDoc(commonCategoryRef, {
+            name: '共通',
+            type: 'main',
+            parentId: null,
+            order: 0,
+            icon: '📌',
+            createdAt: Timestamp.now(),
+          });
+        } else {
+          setCategories(categories);
+        }
       }
     });
 
@@ -170,8 +220,13 @@ export const useFirestore = () => {
       const notesRef = collection(db, `users/${userId}/notes`);
       const now = Timestamp.now();
       
+      // undefinedのフィールドを除去
+      const cleanedData = Object.fromEntries(
+        Object.entries(noteData).filter(([, value]) => value !== undefined)
+      );
+      
       const docRef = await addDoc(notesRef, {
-        ...noteData,
+        ...cleanedData,
         createdAt: now,
         updatedAt: now,
       });
@@ -185,9 +240,14 @@ export const useFirestore = () => {
     async (id: string, updates: Partial<Note>) => {
       if (!userId) return;
 
+      // undefinedのフィールドを除去
+      const cleanedUpdates = Object.fromEntries(
+        Object.entries(updates).filter(([, value]) => value !== undefined)
+      );
+
       const noteRef = doc(db, `users/${userId}/notes/${id}`);
       await updateDoc(noteRef, {
-        ...updates,
+        ...cleanedUpdates,
         updatedAt: Timestamp.now(),
       });
     },
@@ -290,12 +350,30 @@ export const useFirestore = () => {
     [userId]
   );
 
+  // メモの並び替え
+  const reorderNotes = useCallback(
+    async (noteIds: string[]) => {
+      if (!userId) return;
+
+      const batch = writeBatch(db);
+      
+      noteIds.forEach((noteId, index) => {
+        const noteRef = doc(db, `users/${userId}/notes/${noteId}`);
+        batch.update(noteRef, { order: index });
+      });
+
+      await batch.commit();
+    },
+    [userId]
+  );
+
   return {
     // Notes
     addNote,
     updateNote,
     deleteNote,
     deleteNotes,
+    reorderNotes,
     // Categories
     addCategory,
     updateCategory,
