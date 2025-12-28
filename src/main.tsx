@@ -9,7 +9,7 @@ if (import.meta.env.PROD) {
   registerServiceWorker();
 }
 
-// PWAインストールプロンプト初期化
+// PWAインストールプロンプト初期化（iOS/Android両方）
 initPWAInstallPrompt();
 
 createRoot(document.getElementById('root')!).render(

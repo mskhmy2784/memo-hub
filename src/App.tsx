@@ -8,6 +8,7 @@ import { NoteDetailPage } from './pages/NoteDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { NoteModal } from './components/NoteModal';
 import { IOSInstallPrompt } from './components/IOSInstallPrompt';
+import { AndroidInstallPrompt } from './components/AndroidInstallPrompt';
 
 // 認証済みルート
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -96,8 +97,9 @@ const AppContent = () => {
       {/* グローバルモーダル */}
       {isAuthenticated && <NoteModal />}
 
-      {/* iOS向けインストール案内 */}
+      {/* PWAインストール案内（iOS/Android両対応） */}
       <IOSInstallPrompt />
+      <AndroidInstallPrompt />
     </>
   );
 };
