@@ -26,8 +26,7 @@ import {
   Pin,
   Archive,
 } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
-import { ja } from 'date-fns/locale';
+import { format } from 'date-fns';
 import {
   DndContext,
   closestCenter,

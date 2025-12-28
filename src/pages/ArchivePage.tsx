@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useNotesStore } from '../stores/notesStore';
 import { useFirestore } from '../hooks/useFirestore';
 import { useAuth } from '../hooks/useAuth';
@@ -15,10 +15,9 @@ import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
 export const ArchivePage = () => {
-  const navigate = useNavigate();
   useAuth();
   
-  const { notes, categories, tags, isLoading } = useNotesStore();
+  const { notes, categories, isLoading } = useNotesStore();
   const { restoreNote, restoreNotes, permanentDeleteNote, permanentDeleteNotes } = useFirestore();
   
   const [searchQuery, setSearchQuery] = useState('');
