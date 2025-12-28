@@ -1,6 +1,6 @@
 // MemoHub Service Worker
-const CACHE_NAME = 'memohub-v1';
-const STATIC_CACHE_NAME = 'memohub-static-v1';
+const CACHE_NAME = 'memohub-v2';
+const STATIC_CACHE_NAME = 'memohub-static-v2';
 
 // キャッシュする静的リソース
 const STATIC_ASSETS = [
