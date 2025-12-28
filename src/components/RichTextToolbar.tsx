@@ -66,7 +66,6 @@ export const RichTextToolbar = ({
 
     onChange(newValue);
 
-    // カーソル位置を調整
     setTimeout(() => {
       textarea.focus();
       if (text) {
@@ -101,31 +100,26 @@ export const RichTextToolbar = ({
     }, 0);
   };
 
-  // 行頭にプレフィックスを追加（見出し、リストなど）
+  // 行頭にプレフィックスを追加
   const addPrefix = (prefix: string) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
     const { start } = getSelection();
 
-    // 現在の行の開始位置を探す
     let lineStart = start;
     while (lineStart > 0 && value[lineStart - 1] !== '\n') {
       lineStart--;
     }
 
-    // 行末を探す
     let lineEnd = start;
     while (lineEnd < value.length && value[lineEnd] !== '\n') {
       lineEnd++;
     }
 
     const actualLineEnd = lineEnd < value.length ? lineEnd : value.length;
-
-    // 現在の行を取得
     const currentLine = value.substring(lineStart, actualLineEnd);
 
-    // すでに同じプレフィックスがある場合は削除
     if (currentLine.startsWith(prefix)) {
       const newValue =
         value.substring(0, lineStart) +
@@ -138,15 +132,11 @@ export const RichTextToolbar = ({
         textarea.setSelectionRange(start - prefix.length, start - prefix.length);
       }, 0);
     } else {
-      // 他のプレフィックスを削除してから追加
       const prefixes = ['# ', '## ', '### ', '- ', '1. ', '- [ ] ', '> '];
-      let cleanedLine = currentLine;
-      let removedLength = 0;
-
+      let cleanLine = currentLine;
       for (const p of prefixes) {
-        if (currentLine.startsWith(p)) {
-          cleanedLine = currentLine.substring(p.length);
-          removedLength = p.length;
+        if (cleanLine.startsWith(p)) {
+          cleanLine = cleanLine.substring(p.length);
           break;
         }
       }
@@ -154,24 +144,28 @@ export const RichTextToolbar = ({
       const newValue =
         value.substring(0, lineStart) +
         prefix +
-        cleanedLine +
+        cleanLine +
         value.substring(actualLineEnd);
       onChange(newValue);
 
       setTimeout(() => {
         textarea.focus();
-        const newPos = start - removedLength + prefix.length;
+        const newPos = lineStart + prefix.length + (start - lineStart);
         textarea.setSelectionRange(newPos, newPos);
       }, 0);
     }
   };
 
-  // リンクを挿入
+  // リンク挿入
   const insertLink = () => {
-    wrapSelection('[', '](https://)');
+    const { text } = getSelection();
+    if (text) {
+      wrapSelection('[', '](https://)');
+    } else {
+      insertAtCursor('[リンクテキスト](https://)');
+    }
   };
 
-  // ボタン定義
   const buttons: (ToolbarButton | 'divider')[] = [
     {
       icon: <Bold className="w-4 h-4" />,

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 import {
   Heading1,
   Heading2,
@@ -27,9 +27,11 @@ interface SlashCommand {
 interface SlashCommandMenuProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelect: (markdown: string) => void;
+  onSelect: (command: SlashCommand) => void;
   filter: string;
   position: { top: number; left: number };
+  selectedIndex: number;
+  onSelectedIndexChange: (index: number) => void;
 }
 
 const commands: SlashCommand[] = [
@@ -37,31 +39,31 @@ const commands: SlashCommand[] = [
     id: 'h1',
     icon: <Heading1 className="w-4 h-4" />,
     label: '見出し1',
-    description: '大きな見出し',
-    keywords: ['h1', 'heading', '見出し', 'みだし'],
+    description: '大見出しを挿入',
+    keywords: ['h1', 'heading1', '見出し', 'みだし'],
     insert: '# ',
   },
   {
     id: 'h2',
     icon: <Heading2 className="w-4 h-4" />,
     label: '見出し2',
-    description: '中サイズの見出し',
-    keywords: ['h2', 'heading', '見出し', 'みだし'],
+    description: '中見出しを挿入',
+    keywords: ['h2', 'heading2', '見出し'],
     insert: '## ',
   },
   {
     id: 'h3',
     icon: <Heading3 className="w-4 h-4" />,
     label: '見出し3',
-    description: '小さな見出し',
-    keywords: ['h3', 'heading', '見出し', 'みだし'],
+    description: '小見出しを挿入',
+    keywords: ['h3', 'heading3', '見出し'],
     insert: '### ',
   },
   {
     id: 'list',
     icon: <List className="w-4 h-4" />,
     label: '箇条書き',
-    description: '箇条書きリスト',
+    description: '箇条書きリストを挿入',
     keywords: ['list', 'bullet', 'リスト', '箇条書き'],
     insert: '- ',
   },
@@ -69,15 +71,15 @@ const commands: SlashCommand[] = [
     id: 'number',
     icon: <ListOrdered className="w-4 h-4" />,
     label: '番号リスト',
-    description: '番号付きリスト',
-    keywords: ['number', 'ordered', '番号', 'ナンバー'],
+    description: '番号付きリストを挿入',
+    keywords: ['number', 'ordered', '番号', 'リスト'],
     insert: '1. ',
   },
   {
     id: 'todo',
     icon: <CheckSquare className="w-4 h-4" />,
     label: 'チェックリスト',
-    description: 'チェックボックス付きリスト',
+    description: 'TODOリストを挿入',
     keywords: ['todo', 'check', 'task', 'チェック', 'タスク'],
     insert: '- [ ] ',
   },
@@ -85,8 +87,8 @@ const commands: SlashCommand[] = [
     id: 'code',
     icon: <Code className="w-4 h-4" />,
     label: 'コードブロック',
-    description: 'コードを挿入',
-    keywords: ['code', 'コード', 'プログラム'],
+    description: 'コードブロックを挿入',
+    keywords: ['code', 'コード'],
     insert: '```\n\n```',
     cursorOffset: -4,
   },
@@ -94,7 +96,7 @@ const commands: SlashCommand[] = [
     id: 'quote',
     icon: <Quote className="w-4 h-4" />,
     label: '引用',
-    description: '引用ブロック',
+    description: '引用ブロックを挿入',
     keywords: ['quote', 'blockquote', '引用'],
     insert: '> ',
   },
@@ -139,8 +141,9 @@ export const SlashCommandMenu = ({
   onSelect,
   filter,
   position,
+  selectedIndex,
+  onSelectedIndexChange,
 }: SlashCommandMenuProps) => {
-  const [selectedIndex, setSelectedIndex] = useState(0);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // フィルタリング
@@ -156,8 +159,8 @@ export const SlashCommandMenu = ({
 
   // 選択インデックスをリセット
   useEffect(() => {
-    setSelectedIndex(0);
-  }, [filter]);
+    onSelectedIndexChange(0);
+  }, [filter, onSelectedIndexChange]);
 
   // キーボードナビゲーション
   const handleKeyDown = useCallback(
@@ -167,20 +170,20 @@ export const SlashCommandMenu = ({
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
-          setSelectedIndex((prev) =>
-            prev < filteredCommands.length - 1 ? prev + 1 : 0
+          onSelectedIndexChange(
+            selectedIndex < filteredCommands.length - 1 ? selectedIndex + 1 : 0
           );
           break;
         case 'ArrowUp':
           e.preventDefault();
-          setSelectedIndex((prev) =>
-            prev > 0 ? prev - 1 : filteredCommands.length - 1
+          onSelectedIndexChange(
+            selectedIndex > 0 ? selectedIndex - 1 : filteredCommands.length - 1
           );
           break;
         case 'Enter':
           e.preventDefault();
           if (filteredCommands[selectedIndex]) {
-            onSelect(filteredCommands[selectedIndex].insert);
+            onSelect(filteredCommands[selectedIndex]);
           }
           break;
         case 'Escape':
@@ -189,7 +192,7 @@ export const SlashCommandMenu = ({
           break;
       }
     },
-    [isOpen, filteredCommands, selectedIndex, onSelect, onClose]
+    [isOpen, selectedIndex, filteredCommands, onSelect, onClose, onSelectedIndexChange]
   );
 
   useEffect(() => {
@@ -197,7 +200,7 @@ export const SlashCommandMenu = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // メニュー外クリックで閉じる
+  // 外側クリックで閉じる
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
@@ -216,35 +219,33 @@ export const SlashCommandMenu = ({
   return (
     <div
       ref={menuRef}
-      className="absolute z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-2 w-64 max-h-80 overflow-y-auto"
+      className="absolute z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-2 w-64 max-h-72 overflow-y-auto"
       style={{
         top: position.top,
         left: position.left,
       }}
     >
-      <div className="px-3 py-1 text-xs text-gray-500 font-medium">
+      <div className="px-3 py-1 text-xs text-gray-500 border-b border-gray-100 mb-1">
         コマンド
       </div>
       {filteredCommands.map((cmd, index) => (
         <button
           key={cmd.id}
           type="button"
-          onClick={() => onSelect(cmd.insert)}
+          onClick={() => onSelect(cmd)}
           className={`w-full px-3 py-2 flex items-center gap-3 text-left hover:bg-gray-50 ${
-            index === selectedIndex ? 'bg-primary-50' : ''
+            index === selectedIndex ? 'bg-primary-50 text-primary-700' : ''
           }`}
         >
-          <div className="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-600">
-            {cmd.icon}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-gray-900">{cmd.label}</div>
-            <div className="text-xs text-gray-500 truncate">
-              {cmd.description}
-            </div>
+          <span className="text-gray-500">{cmd.icon}</span>
+          <div>
+            <div className="text-sm font-medium">{cmd.label}</div>
+            <div className="text-xs text-gray-400">{cmd.description}</div>
           </div>
         </button>
       ))}
     </div>
   );
 };
+
+export type { SlashCommand };
