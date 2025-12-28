@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Note, Category, Tag, FilterOptions, SortOptions, ModalState } from '../types';
+import type { Note, Category, Tag, FilterOptions, SortOptions, ModalState, DeleteDialogState } from '../types';
 
 interface NotesState {
   notes: Note[];
@@ -10,6 +10,7 @@ interface NotesState {
   modal: ModalState;
   selectedNoteIds: string[];
   isLoading: boolean;
+  deleteDialog: DeleteDialogState;
   
   // Notes actions
   setNotes: (notes: Note[]) => void;
@@ -45,6 +46,10 @@ interface NotesState {
   
   // Loading
   setLoading: (loading: boolean) => void;
+  
+  // Delete Dialog actions
+  openDeleteDialog: (noteIds: string[], mode?: 'single' | 'bulk') => void;
+  closeDeleteDialog: () => void;
 }
 
 const initialFilter: FilterOptions = {
@@ -53,6 +58,7 @@ const initialFilter: FilterOptions = {
   tagIds: [],
   priority: null,
   showFavoritesOnly: false,
+  includeArchived: false,
 };
 
 const initialSort: SortOptions = {
@@ -69,6 +75,7 @@ export const useNotesStore = create<NotesState>((set) => ({
   modal: { isOpen: false, mode: 'create' },
   selectedNoteIds: [],
   isLoading: true,
+  deleteDialog: { isOpen: false, noteIds: [], mode: 'single' },
   
   // Notes actions
   setNotes: (notes) => set({ notes }),
@@ -120,5 +127,13 @@ export const useNotesStore = create<NotesState>((set) => ({
   clearSelection: () => set({ selectedNoteIds: [] }),
   
   // Loading
-  setLoading: (isLoading) => set({ isLoading }),
+  setLoading: (loading) => set({ isLoading: loading }),
+  
+  // Delete Dialog actions
+  openDeleteDialog: (noteIds, mode = 'single') => set({ 
+    deleteDialog: { isOpen: true, noteIds, mode } 
+  }),
+  closeDeleteDialog: () => set({ 
+    deleteDialog: { isOpen: false, noteIds: [], mode: 'single' } 
+  }),
 }));

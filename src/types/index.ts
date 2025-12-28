@@ -45,6 +45,9 @@ export interface Note {
   order: number; // 表示順序
   createdAt: Date;
   updatedAt: Date;
+  // アーカイブ関連
+  isArchived: boolean;
+  archivedAt?: Date;
 }
 
 // フィルタオプション
@@ -54,6 +57,7 @@ export interface FilterOptions {
   tagIds: string[];
   priority: number | null;
   showFavoritesOnly: boolean;
+  includeArchived?: boolean; // 検索時にアーカイブも含める
 }
 
 // ソートオプション
@@ -72,10 +76,18 @@ export interface ModalState {
   noteId?: string;
 }
 
+// 削除確認ダイアログ状態
+export interface DeleteDialogState {
+  isOpen: boolean;
+  noteIds: string[];
+  mode: 'single' | 'bulk';
+}
+
 // Firestore用のタイムスタンプ変換
-export interface FirestoreNote extends Omit<Note, 'createdAt' | 'updatedAt'> {
+export interface FirestoreNote extends Omit<Note, 'createdAt' | 'updatedAt' | 'archivedAt'> {
   createdAt: any;
   updatedAt: any;
+  archivedAt?: any;
 }
 
 export interface FirestoreCategory extends Omit<Category, 'createdAt'> {

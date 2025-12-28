@@ -21,8 +21,8 @@ import {
 export const NoteDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { notes, categories, tags, openModal } = useNotesStore();
-  const { deleteNote, updateNote } = useFirestore();
+  const { notes, categories, tags, openModal, openDeleteDialog } = useNotesStore();
+  const { updateNote } = useFirestore();
 
   const note = notes.find((n) => n.id === id);
 
@@ -61,12 +61,9 @@ export const NoteDetailPage = () => {
     .map((tagId) => tags.find((t) => t.id === tagId))
     .filter(Boolean);
 
-  // 削除
-  const handleDelete = async () => {
-    if (!confirm('このメモを削除しますか？')) return;
-
-    await deleteNote(note.id);
-    navigate('/notes');
+  // 削除（削除確認ダイアログを開く）
+  const handleDelete = () => {
+    openDeleteDialog([note.id], 'single');
   };
 
   // お気に入り切り替え
@@ -193,8 +190,8 @@ export const NoteDetailPage = () => {
                       )}
                       <span className="text-sm opacity-80 truncate block">{urlInfo.url}</span>
                     </div>
-                    <span className="text-xs opacity-60 group-hover:opacity-100 flex-shrink-0">
-                      新しいタブで開く
+                    <span className="text-xs text-primary-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                      開く →
                     </span>
                   </a>
                 ))}
@@ -206,26 +203,8 @@ export const NoteDetailPage = () => {
           {note.content && (
             <div className="mb-6">
               <h2 className="text-sm font-medium text-gray-500 mb-2">メモ</h2>
-              <div className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
-                <ReactMarkdown 
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    a: ({ href, children }) => (
-                      <a href={href} target="_blank" rel="noopener noreferrer">
-                        {children}
-                      </a>
-                    ),
-                    img: ({ src, alt }) => (
-                      <img 
-                        src={src} 
-                        alt={alt || ''} 
-                        className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
-                        loading="lazy"
-                        onClick={() => src && window.open(src, '_blank')}
-                      />
-                    ),
-                  }}
-                >
+              <div className="prose prose-gray max-w-none bg-gray-50 rounded-lg p-4">
+                <ReactMarkdown remarkPlugins={[remarkGfm]}>
                   {note.content}
                 </ReactMarkdown>
               </div>
@@ -235,37 +214,37 @@ export const NoteDetailPage = () => {
           {/* タグ */}
           {noteTags.length > 0 && (
             <div className="mb-6">
-              <h2 className="text-sm font-medium text-gray-500 mb-2 flex items-center gap-2">
+              <h2 className="text-sm font-medium text-gray-500 mb-2 flex items-center gap-1">
                 <TagIcon className="w-4 h-4" />
                 タグ
               </h2>
               <div className="flex flex-wrap gap-2">
-                {noteTags.map((tag) => (
+                {noteTags.map((tag: any) => (
                   <span
-                    key={tag!.id}
-                    className="badge px-3 py-1"
+                    key={tag.id}
+                    className="px-3 py-1 rounded-full text-sm font-medium"
                     style={{
-                      backgroundColor: `${tag!.color}20`,
-                      color: tag!.color,
+                      backgroundColor: `${tag.color}20`,
+                      color: tag.color,
                     }}
                   >
-                    {tag!.name}
+                    {tag.name}
                   </span>
                 ))}
               </div>
             </div>
           )}
 
-          {/* 日時情報 */}
-          <div className="pt-6 border-t border-gray-100">
+          {/* メタ情報 */}
+          <div className="border-t border-gray-100 pt-6 mt-6">
             <div className="flex flex-wrap gap-6 text-sm text-gray-500">
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
-                作成: {format(note.createdAt, 'yyyy年M月d日 HH:mm', { locale: ja })}
+                作成日: {format(note.createdAt, 'yyyy年MM月dd日 HH:mm', { locale: ja })}
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                更新: {format(note.updatedAt, 'yyyy年M月d日 HH:mm', { locale: ja })}
+                更新日: {format(note.updatedAt, 'yyyy年MM月dd日 HH:mm', { locale: ja })}
               </div>
             </div>
           </div>

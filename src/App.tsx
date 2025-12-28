@@ -6,7 +6,9 @@ import { Dashboard } from './pages/Dashboard';
 import { NotesPage } from './pages/NotesPage';
 import { NoteDetailPage } from './pages/NoteDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { ArchivePage } from './pages/ArchivePage';
 import { NoteModal } from './components/NoteModal';
+import { DeleteConfirmDialog } from './components/DeleteConfirmDialog';
 
 // 認証済みルート
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -78,6 +80,16 @@ const AppContent = () => {
           }
         />
 
+        {/* アーカイブ */}
+        <Route
+          path="/archive"
+          element={
+            <ProtectedRoute>
+              <ArchivePage />
+            </ProtectedRoute>
+          }
+        />
+
         {/* 設定 */}
         <Route
           path="/settings"
@@ -93,7 +105,12 @@ const AppContent = () => {
       </Routes>
 
       {/* グローバルモーダル */}
-      {isAuthenticated && <NoteModal />}
+      {isAuthenticated && (
+        <>
+          <NoteModal />
+          <DeleteConfirmDialog />
+        </>
+      )}
     </>
   );
 };

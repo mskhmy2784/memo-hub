@@ -150,6 +150,9 @@ export const useFirestore = () => {
           order,
           createdAt,
           updatedAt: convertTimestamp(data.updatedAt),
+          // アーカイブ関連（後方互換性）
+          isArchived: data.isArchived ?? false,
+          archivedAt: data.archivedAt ? convertTimestamp(data.archivedAt) : undefined,
         };
       });
       setNotes(notes);
@@ -228,6 +231,7 @@ export const useFirestore = () => {
       
       const docRef = await addDoc(notesRef, {
         ...cleanedData,
+        isArchived: false, // 新規作成時はアーカイブされていない
         createdAt: now,
         updatedAt: now,
       });
@@ -295,6 +299,112 @@ export const useFirestore = () => {
   );
 
   const deleteNotes = useCallback(
+    async (ids: string[]) => {
+      if (!userId) return;
+
+      // 各メモの画像を削除
+      await Promise.all(ids.map((id) => deleteNoteImages(id)));
+
+      const batch = writeBatch(db);
+      ids.forEach((id) => {
+        const noteRef = doc(db, `users/${userId}/notes/${id}`);
+        batch.delete(noteRef);
+      });
+      await batch.commit();
+    },
+    [userId, deleteNoteImages]
+  );
+
+  // メモをアーカイブ
+  const archiveNote = useCallback(
+    async (id: string) => {
+      if (!userId) return;
+
+      const noteRef = doc(db, `users/${userId}/notes/${id}`);
+      await updateDoc(noteRef, {
+        isArchived: true,
+        archivedAt: Timestamp.now(),
+        updatedAt: Timestamp.now(),
+      });
+    },
+    [userId]
+  );
+
+  // 複数メモをアーカイブ
+  const archiveNotes = useCallback(
+    async (ids: string[]) => {
+      if (!userId) return;
+
+      const batch = writeBatch(db);
+      const now = Timestamp.now();
+      
+      ids.forEach((id) => {
+        const noteRef = doc(db, `users/${userId}/notes/${id}`);
+        batch.update(noteRef, {
+          isArchived: true,
+          archivedAt: now,
+          updatedAt: now,
+        });
+      });
+      
+      await batch.commit();
+    },
+    [userId]
+  );
+
+  // アーカイブからメモを復元
+  const restoreNote = useCallback(
+    async (id: string) => {
+      if (!userId) return;
+
+      const noteRef = doc(db, `users/${userId}/notes/${id}`);
+      await updateDoc(noteRef, {
+        isArchived: false,
+        archivedAt: null,
+        updatedAt: Timestamp.now(),
+      });
+    },
+    [userId]
+  );
+
+  // 複数メモを復元
+  const restoreNotes = useCallback(
+    async (ids: string[]) => {
+      if (!userId) return;
+
+      const batch = writeBatch(db);
+      const now = Timestamp.now();
+      
+      ids.forEach((id) => {
+        const noteRef = doc(db, `users/${userId}/notes/${id}`);
+        batch.update(noteRef, {
+          isArchived: false,
+          archivedAt: null,
+          updatedAt: now,
+        });
+      });
+      
+      await batch.commit();
+    },
+    [userId]
+  );
+
+  // メモを完全削除
+  const permanentDeleteNote = useCallback(
+    async (id: string) => {
+      if (!userId) return;
+
+      // 関連する画像を削除
+      await deleteNoteImages(id);
+
+      const noteRef = doc(db, `users/${userId}/notes/${id}`);
+      await deleteDoc(noteRef);
+    },
+    [userId, deleteNoteImages]
+  );
+
+  // 複数メモを完全削除
+  const permanentDeleteNotes = useCallback(
     async (ids: string[]) => {
       if (!userId) return;
 
@@ -407,6 +517,13 @@ export const useFirestore = () => {
     deleteNote,
     deleteNotes,
     reorderNotes,
+    // Archive
+    archiveNote,
+    archiveNotes,
+    restoreNote,
+    restoreNotes,
+    permanentDeleteNote,
+    permanentDeleteNotes,
     // Categories
     addCategory,
     updateCategory,

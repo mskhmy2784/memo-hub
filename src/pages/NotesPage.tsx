@@ -24,6 +24,7 @@ import {
   ArrowLeft,
   GripVertical,
   Pin,
+  Archive,
 } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { ja } from 'date-fns/locale';
@@ -59,11 +60,12 @@ export const NotesPage = () => {
     setFilter,
     setSort,
     openModal,
+    openDeleteDialog,
     toggleSelectNote,
     clearSelection,
     isLoading,
   } = useNotesStore();
-  const { deleteNotes, updateNote, reorderNotes } = useFirestore();
+  const { updateNote, reorderNotes } = useFirestore();
 
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
@@ -104,9 +106,16 @@ export const NotesPage = () => {
   const getSubCategories = (parentId: string) =>
     categories.filter((c) => c.type === 'sub' && c.parentId === parentId);
 
-  // フィルタリングされたメモ
+  // アーカイブされたメモの件数
+  const archivedCount = useMemo(
+    () => notes.filter((n) => n.isArchived).length,
+    [notes]
+  );
+
+  // フィルタリングされたメモ（アーカイブを除外）
   const filteredNotes = useMemo(() => {
-    let result = [...notes];
+    // アーカイブされていないメモのみ対象
+    let result = [...notes].filter((n) => !n.isArchived);
 
     // 検索フィルタ
     if (filter.search) {
@@ -211,13 +220,10 @@ export const NotesPage = () => {
     return null;
   };
 
-  // 一括削除
-  const handleBulkDelete = async () => {
+  // 一括削除（削除確認ダイアログを開く）
+  const handleBulkDelete = () => {
     if (selectedNoteIds.length === 0) return;
-    if (!confirm(`${selectedNoteIds.length}件のメモを削除しますか？`)) return;
-
-    await deleteNotes(selectedNoteIds);
-    clearSelection();
+    openDeleteDialog(selectedNoteIds, 'bulk');
   };
 
   // エクスポート
@@ -321,13 +327,29 @@ export const NotesPage = () => {
               <h1 className="text-xl font-semibold text-gray-900">すべてのメモ</h1>
             </div>
 
-            <button
-              onClick={() => openModal('create')}
-              className="btn btn-primary"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">新規追加</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {/* アーカイブへのリンク */}
+              <Link
+                to="/archive"
+                className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
+              >
+                <Archive className="w-4 h-4" />
+                <span className="hidden sm:inline">アーカイブ</span>
+                {archivedCount > 0 && (
+                  <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
+                    {archivedCount}
+                  </span>
+                )}
+              </Link>
+
+              <button
+                onClick={() => openModal('create')}
+                className="btn btn-primary"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="hidden sm:inline">新規追加</span>
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -351,7 +373,7 @@ export const NotesPage = () => {
                   <FileText className="w-4 h-4" />
                   すべて
                   <span className="ml-auto text-sm text-gray-400">
-                    {notes.length}
+                    {notes.filter(n => !n.isArchived).length}
                   </span>
                 </button>
 
@@ -360,8 +382,10 @@ export const NotesPage = () => {
                   const isExpanded = expandedCategories.includes(category.id);
                   const count = notes.filter(
                     (n) =>
-                      n.categoryId === category.id ||
-                      subCategories.some((sc) => sc.id === n.categoryId)
+                      !n.isArchived && (
+                        n.categoryId === category.id ||
+                        subCategories.some((sc) => sc.id === n.categoryId)
+                      )
                   ).length;
 
                   const getCategoryIcon = () => {
@@ -411,68 +435,34 @@ export const NotesPage = () => {
                           </span>
                         </button>
                       </div>
-                      {isExpanded &&
-                        subCategories.map((sub) => (
-                          <button
-                            key={sub.id}
-                            onClick={() => setFilter({ categoryId: sub.id })}
-                            className={`w-full sidebar-item pl-10 ${
-                              filter.categoryId === sub.id ? 'active' : ''
-                            }`}
-                          >
-                            {sub.name}
-                            <span className="ml-auto text-sm text-gray-400">
-                              {notes.filter((n) => n.categoryId === sub.id).length}
-                            </span>
-                          </button>
-                        ))}
+
+                      {isExpanded && subCategories.length > 0 && (
+                        <div className="ml-6 mt-1 space-y-1">
+                          {subCategories.map((sub) => {
+                            const subCount = notes.filter(
+                              (n) => !n.isArchived && n.categoryId === sub.id
+                            ).length;
+                            return (
+                              <button
+                                key={sub.id}
+                                onClick={() => setFilter({ categoryId: sub.id })}
+                                className={`w-full sidebar-item text-sm ${
+                                  filter.categoryId === sub.id ? 'active' : ''
+                                }`}
+                              >
+                                {sub.name}
+                                <span className="ml-auto text-xs text-gray-400">
+                                  {subCount}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </nav>
-
-              <div className="border-t border-gray-200 mt-4 pt-4">
-                <button
-                  onClick={() => setFilter({ showFavoritesOnly: !filter.showFavoritesOnly })}
-                  className={`w-full sidebar-item ${
-                    filter.showFavoritesOnly ? 'active' : ''
-                  }`}
-                >
-                  <Star className="w-4 h-4 text-amber-500" />
-                  お気に入り
-                </button>
-              </div>
-
-              {/* タグフィルタ */}
-              {tags.length > 0 && (
-                <div className="border-t border-gray-200 mt-4 pt-4">
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">タグ</h3>
-                  <div className="flex flex-wrap gap-1">
-                    {tags.map((tag) => (
-                      <button
-                        key={tag.id}
-                        onClick={() => {
-                          const newTagIds = filter.tagIds.includes(tag.id)
-                            ? filter.tagIds.filter((id) => id !== tag.id)
-                            : [...filter.tagIds, tag.id];
-                          setFilter({ tagIds: newTagIds });
-                        }}
-                        className={`px-2 py-1 rounded text-xs font-medium transition-all ${
-                          filter.tagIds.includes(tag.id)
-                            ? 'ring-2 ring-offset-1'
-                            : 'opacity-60 hover:opacity-100'
-                        }`}
-                        style={{
-                          backgroundColor: `${tag.color}20`,
-                          color: tag.color,
-                        }}
-                      >
-                        {tag.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </aside>
 
@@ -481,14 +471,15 @@ export const NotesPage = () => {
             {/* 検索・フィルタバー */}
             <div className="card p-4 mb-4">
               <div className="flex flex-col sm:flex-row gap-4">
+                {/* 検索 */}
                 <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="text"
+                    placeholder="タイトル、メモ、URLで検索..."
                     value={filter.search}
                     onChange={(e) => setFilter({ search: e.target.value })}
-                    placeholder="検索..."
-                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
                   />
                   {filter.search && (
                     <button
@@ -500,64 +491,63 @@ export const NotesPage = () => {
                   )}
                 </div>
 
-                <div className="flex gap-2">
-                  <div className="relative">
-                    <button
-                      onClick={() => setShowSortMenu(!showSortMenu)}
-                      className="btn btn-secondary flex items-center gap-2"
-                    >
-                      {sort.order === 'asc' ? (
-                        <SortAsc className="w-4 h-4" />
-                      ) : (
-                        <SortDesc className="w-4 h-4" />
-                      )}
-                      <span className="hidden sm:inline">
-                        {sortOptions.find((o) => o.field === sort.field)?.label}
-                      </span>
-                      <ChevronDown className="w-4 h-4" />
-                    </button>
-
-                    {showSortMenu && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-10"
-                          onClick={() => setShowSortMenu(false)}
-                        />
-                        <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
-                          {sortOptions.map((option) => (
-                            <button
-                              key={option.field}
-                              onClick={() => {
-                                if (sort.field === option.field) {
-                                  setSort({
-                                    order: sort.order === 'asc' ? 'desc' : 'asc',
-                                  });
-                                } else {
-                                  setSort({
-                                    field: option.field,
-                                    order: option.field === 'order' ? 'asc' : 'desc',
-                                  });
-                                }
-                                setShowSortMenu(false);
-                              }}
-                              className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between ${
-                                sort.field === option.field
-                                  ? 'text-primary-600 bg-primary-50'
-                                  : 'text-gray-700'
-                              }`}
-                            >
-                              {option.label}
-                              {sort.field === option.field && (
-                                <span>
-                                  {sort.order === 'asc' ? '↑' : '↓'}
-                                </span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </>
+                {/* ソート */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowSortMenu(!showSortMenu)}
+                    className="btn btn-secondary flex items-center gap-2"
+                  >
+                    {sort.order === 'asc' ? (
+                      <SortAsc className="w-4 h-4" />
+                    ) : (
+                      <SortDesc className="w-4 h-4" />
                     )}
-                  </div>
+                    <span className="hidden sm:inline">
+                      {sortOptions.find((o) => o.field === sort.field)?.label}
+                    </span>
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
+
+                  {showSortMenu && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setShowSortMenu(false)}
+                      />
+                      <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
+                        {sortOptions.map((option) => (
+                          <button
+                            key={option.field}
+                            onClick={() => {
+                              if (sort.field === option.field) {
+                                setSort({
+                                  order: sort.order === 'asc' ? 'desc' : 'asc',
+                                });
+                              } else {
+                                setSort({
+                                  field: option.field,
+                                  order: option.field === 'order' ? 'asc' : 'desc',
+                                });
+                              }
+                              setShowSortMenu(false);
+                            }}
+                            className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between ${
+                              sort.field === option.field
+                                ? 'text-primary-600 bg-primary-50'
+                                : 'text-gray-700'
+                            }`}
+                          >
+                            {option.label}
+                            {sort.field === option.field && (
+                              <span>
+                                {sort.order === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -815,35 +805,37 @@ const SortableNoteItem = ({
         <div className="flex-shrink-0">
           {note.urls.length === 1 ? (
             <a
-              href={(note.urls[0] as UrlInfo).url}
+              href={note.urls[0].url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-              title={(note.urls[0] as UrlInfo).title || (note.urls[0] as UrlInfo).url}
+              className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
+              title={note.urls[0].title || note.urls[0].url}
             >
               <ExternalLink className="w-4 h-4" />
             </a>
           ) : (
-            <div className="relative group/url">
+            <div className="relative group">
               <button
-                className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-0.5"
+                onClick={(e) => e.stopPropagation()}
+                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors flex items-center gap-0.5"
               >
                 <ExternalLink className="w-4 h-4" />
                 <span className="text-xs">{note.urls.length}</span>
               </button>
-              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 opacity-0 invisible group-hover/url:opacity-100 group-hover/url:visible transition-all">
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 hidden group-hover:block">
                 {note.urls.map((urlInfo: UrlInfo, idx: number) => (
                   <a
                     key={idx}
                     href={urlInfo.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
-                    onClick={(e) => e.stopPropagation()}
+                    className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-sm"
                   >
-                    <ExternalLink className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                    <span className="truncate">{urlInfo.title || urlInfo.url}</span>
+                    <ExternalLink className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                    <span className="truncate">
+                      {urlInfo.title || urlInfo.url}
+                    </span>
                   </a>
                 ))}
               </div>
@@ -852,31 +844,32 @@ const SortableNoteItem = ({
         </div>
       )}
 
-      {/* 日時 */}
-      <div className="hidden sm:block text-xs text-gray-400 flex-shrink-0">
-        {formatDistanceToNow(note.updatedAt, { addSuffix: true, locale: ja })}
-      </div>
-
-      {/* お気に入りボタン */}
+      {/* お気に入り */}
       <button
-        onClick={() => handleToggleFavorite(note)}
-        className="p-1.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleToggleFavorite(note);
+        }}
+        className={`p-1.5 rounded transition-colors flex-shrink-0 ${
+          note.isFavorite
+            ? 'text-amber-500'
+            : 'text-gray-300 hover:text-amber-400'
+        }`}
       >
         <Star
-          className={`w-4 h-4 ${
-            note.isFavorite
-              ? 'fill-amber-500 text-amber-500'
-              : 'text-gray-400'
-          }`}
+          className={`w-4 h-4 ${note.isFavorite ? 'fill-amber-500' : ''}`}
         />
       </button>
 
-      {/* 編集ボタン */}
+      {/* 編集 */}
       <button
-        onClick={() => openModal('edit', note.id)}
-        className="p-1.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
+        onClick={(e) => {
+          e.stopPropagation();
+          openModal('edit', note.id);
+        }}
+        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
       >
-        <Edit className="w-4 h-4 text-gray-400" />
+        <Edit className="w-4 h-4" />
       </button>
     </div>
   );
