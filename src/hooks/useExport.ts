@@ -138,25 +138,48 @@ const downloadFile = (content: string | Blob, fileName: string, mimeType: string
   URL.revokeObjectURL(url);
 };
 
-// Markdownからプレーンテキストに変換（PDF用）
-const markdownToPlainText = (markdown: string): string => {
-  let text = markdown;
+// MarkdownをHTMLに変換（PDF用 - 画像を含む）
+const markdownToHtml = (markdown: string): string => {
+  let html = markdown;
 
-  text = text.replace(/^#{1,6}\s+/gm, '');
-  text = text.replace(/\*\*(.+?)\*\*/g, '$1');
-  text = text.replace(/\*(.+?)\*/g, '$1');
-  text = text.replace(/__(.+?)__/g, '$1');
-  text = text.replace(/_(.+?)_/g, '$1');
-  text = text.replace(/`([^`]+)`/g, '$1');
-  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
-  text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '<<画像>>');
-  text = text.replace(/^[-*]\s+/gm, '• ');
-  text = text.replace(/^>\s+/gm, '｜ ');
-  text = text.replace(/```[\s\S]*?```/g, (match) => {
-    return match.replace(/```\w*\n?/g, '').trim();
+  // コードブロック（先に処理）
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_match, _lang, code) => {
+    return `<pre style="background:#f5f5f5;padding:12px;border-radius:6px;overflow-x:auto;font-size:9pt;"><code>${escapeHtml(code.trim())}</code></pre>`;
   });
 
-  return text;
+  // 見出し
+  html = html.replace(/^#### (.+)$/gm, '<h4 style="font-size:11pt;font-weight:bold;margin:16px 0 8px;">$1</h4>');
+  html = html.replace(/^### (.+)$/gm, '<h3 style="font-size:12pt;font-weight:bold;margin:16px 0 8px;">$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2 style="font-size:13pt;font-weight:bold;margin:16px 0 8px;">$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1 style="font-size:14pt;font-weight:bold;margin:16px 0 8px;">$1</h1>');
+
+  // 画像（PDFでは実際に表示）
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;height:auto;margin:12px 0;border-radius:6px;">');
+
+  // リンク
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" style="color:#0066cc;">$1</a>');
+
+  // 太字・斜体
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+  // インラインコード
+  html = html.replace(/`([^`]+)`/g, '<code style="background:#f0f0f0;padding:2px 6px;border-radius:4px;font-size:9pt;">$1</code>');
+
+  // リスト
+  html = html.replace(/^[-*] (.+)$/gm, '<li style="margin:4px 0;">$1</li>');
+  html = html.replace(/(<li[^>]*>.*<\/li>\n?)+/g, '<ul style="margin:8px 0;padding-left:24px;">$&</ul>');
+
+  // 引用
+  html = html.replace(/^> (.+)$/gm, '<blockquote style="border-left:4px solid #ddd;padding-left:12px;margin:8px 0;color:#666;">$1</blockquote>');
+
+  // 改行
+  html = html.replace(/\n/g, '<br>');
+
+  // 連続した<br>を段落として整理
+  html = html.replace(/(<br>){3,}/g, '<br><br>');
+
+  return html;
 };
 
 // HTMLエスケープ
@@ -318,9 +341,9 @@ const generatePdfViaPrint = (
   // 区切り線
   html += '<hr class="divider">';
 
-  // 本文
-  const plainContent = markdownToPlainText(note.content);
-  html += `<div class="content">${escapeHtml(plainContent).replace(/\n/g, '<br>')}</div>`;
+  // 本文（画像を含むHTMLに変換）
+  const contentHtml = markdownToHtml(note.content);
+  html += `<div class="content">${contentHtml}</div>`;
 
   // URL
   if (options.includeUrls && note.urls && note.urls.length > 0) {
