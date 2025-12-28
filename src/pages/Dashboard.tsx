@@ -144,12 +144,6 @@ export const Dashboard = () => {
     }
   };
 
-  const clearFilters = () => {
-    setSearchQuery('');
-    setSelectedTags([]);
-    setSelectedPriority(null);
-  };
-
   const toggleTag = (tagId: string) => {
     setSelectedTags((prev) =>
       prev.includes(tagId)
@@ -201,26 +195,31 @@ export const Dashboard = () => {
               <div className="relative group">
                 <button className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
                   {user?.photoURL ? (
-                    <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full" />
+                    <img
+                      src={user.photoURL}
+                      alt={user.displayName || 'User'}
+                      className="w-8 h-8 rounded-full"
+                    />
                   ) : (
-                    <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
-                      <span className="text-sm font-medium text-gray-600">
-                        {user?.displayName?.charAt(0) || 'U'}
+                    <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
+                      <span className="text-sm font-medium text-primary-700">
+                        {user?.displayName?.[0] || 'U'}
                       </span>
                     </div>
                   )}
                 </button>
-                
-                <div className="absolute right-0 top-full mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-200 py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
+
+                <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                   <div className="px-4 py-2 border-b border-gray-100">
-                    <p className="text-sm font-medium text-gray-900 truncate">{user?.displayName}</p>
-                    <p className="text-xs text-gray-500 truncate">{user?.email}</p>
+                    <p className="font-medium text-gray-900 truncate">
+                      {user?.displayName}
+                    </p>
+                    <p className="text-sm text-gray-500 truncate">{user?.email}</p>
                   </div>
-                  <Link to="/settings" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                    <Settings className="w-4 h-4" />
-                    設定
-                  </Link>
-                  <button onClick={signOut} className="flex items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 w-full">
+                  <button
+                    onClick={() => signOut()}
+                    className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                  >
                     <LogOut className="w-4 h-4" />
                     ログアウト
                   </button>
@@ -231,173 +230,191 @@ export const Dashboard = () => {
         </div>
       </header>
 
+      {/* メインコンテンツ */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* 検索バー */}
         <div className="mb-8">
-          <div className="max-w-3xl mx-auto">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="メモを検索... (タイトル、内容、URL)"
-                className="w-full pl-12 pr-24 py-3 bg-white border border-gray-200 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-lg"
+                className="input pl-10 pr-10 py-3 text-base"
               />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                {(searchQuery || hasActiveFilters) && (
-                  <button onClick={clearFilters} className="p-2 text-gray-400 hover:text-gray-600" title="クリア">
-                    <X className="w-5 h-5" />
-                  </button>
-                )}
+              {searchQuery && (
                 <button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className={`p-2 rounded-lg transition-colors relative ${
-                    showFilters || hasActiveFilters
-                      ? 'bg-primary-100 text-primary-600'
-                      : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-                  }`}
-                  title="フィルタ"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
                 >
-                  <Filter className="w-5 h-5" />
-                  {hasActiveFilters && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary-500 text-white text-xs rounded-full flex items-center justify-center">
-                      {selectedTags.length + (selectedPriority !== null ? 1 : 0)}
-                    </span>
-                  )}
+                  <X className="w-4 h-4" />
                 </button>
-              </div>
+              )}
             </div>
-
-            {/* フィルタパネル */}
-            {showFilters && (
-              <div className="mt-3 p-4 bg-white rounded-xl shadow-sm border border-gray-200">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">重要度</label>
-                    <div className="flex gap-2">
-                      {[
-                        { value: 1, label: '高', className: 'bg-red-100 text-red-700 border-red-200' },
-                        { value: 2, label: '中', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-                        { value: 3, label: '低', className: 'bg-blue-100 text-blue-700 border-blue-200' },
-                      ].map((option) => (
-                        <button
-                          key={option.value}
-                          onClick={() => setSelectedPriority(selectedPriority === option.value ? null : option.value)}
-                          className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
-                            selectedPriority === option.value
-                              ? option.className + ' border-2'
-                              : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                          }`}
-                        >
-                          {option.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">タグ</label>
-                    <div className="flex flex-wrap gap-2">
-                      {tags.length === 0 ? (
-                        <span className="text-sm text-gray-400">タグがありません</span>
-                      ) : (
-                        tags.map((tag) => (
-                          <button
-                            key={tag.id}
-                            onClick={() => toggleTag(tag.id)}
-                            className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
-                              selectedTags.includes(tag.id)
-                                ? 'ring-2 ring-offset-1 ring-gray-400'
-                                : 'opacity-70 hover:opacity-100'
-                            }`}
-                            style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                          >
-                            {tag.name}
-                          </button>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* アクティブフィルタ表示 */}
-            {hasActiveFilters && !showFilters && (
-              <div className="mt-2 flex items-center gap-2 flex-wrap">
-                <span className="text-sm text-gray-500">フィルタ:</span>
-                {selectedPriority !== null && (
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    selectedPriority === 1 ? 'bg-red-100 text-red-700' :
-                    selectedPriority === 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
-                  }`}>
-                    重要度: {selectedPriority === 1 ? '高' : selectedPriority === 2 ? '中' : '低'}
-                    <button onClick={() => setSelectedPriority(null)} className="ml-1 hover:opacity-70">×</button>
-                  </span>
-                )}
-                {selectedTags.map((tagId) => {
-                  const tag = tags.find((t) => t.id === tagId);
-                  if (!tag) return null;
-                  return (
-                    <span key={tagId} className="px-2 py-1 rounded text-xs font-medium" style={{ backgroundColor: `${tag.color}20`, color: tag.color }}>
-                      {tag.name}
-                      <button onClick={() => toggleTag(tagId)} className="ml-1 hover:opacity-70">×</button>
-                    </span>
-                  );
-                })}
-              </div>
-            )}
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`p-3 rounded-xl border transition-colors relative ${
+                hasActiveFilters
+                  ? 'bg-primary-100 text-primary-600'
+                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+              }`}
+              title="フィルタ"
+            >
+              <Filter className="w-5 h-5" />
+              {hasActiveFilters && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-primary-500 text-white text-xs rounded-full flex items-center justify-center">
+                  {selectedTags.length + (selectedPriority !== null ? 1 : 0)}
+                </span>
+              )}
+            </button>
           </div>
 
-          {/* 検索結果 */}
-          {(searchQuery || hasActiveFilters) && (
-            <div className="max-w-3xl mx-auto mt-4">
-              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
-                  <span className="text-sm text-gray-600">{searchResults.length}件の結果</span>
-                </div>
-                {searchResults.length === 0 ? (
-                  <div className="p-6 text-center text-gray-500">条件に一致するメモが見つかりません</div>
-                ) : (
-                  <div className="divide-y divide-gray-100">
-                    {searchResults.map((note) => (
-                      <NoteListItem
-                        key={note.id}
-                        note={note}
-                        categoryName={getCategoryName(note.categoryId)}
-                        priorityColor={getPriorityColor(note.priority)}
-                        tags={tags}
-                        onClick={() => navigate(`/notes/${note.id}`)}
-                      />
+          {/* フィルタパネル */}
+          {showFilters && (
+            <div className="mt-3 p-4 bg-white rounded-xl shadow-sm border border-gray-200">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">重要度</label>
+                  <div className="flex gap-2">
+                    {[
+                      { value: 1, label: '高', className: 'bg-red-100 text-red-700 border-red-200' },
+                      { value: 2, label: '中', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
+                      { value: 3, label: '低', className: 'bg-blue-100 text-blue-700 border-blue-200' },
+                    ].map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => setSelectedPriority(selectedPriority === option.value ? null : option.value)}
+                        className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
+                          selectedPriority === option.value
+                            ? option.className + ' border-2'
+                            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
                     ))}
                   </div>
-                )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">タグ</label>
+                  <div className="flex flex-wrap gap-2">
+                    {tags.length === 0 ? (
+                      <span className="text-sm text-gray-400">タグがありません</span>
+                    ) : (
+                      tags.map((tag) => (
+                        <button
+                          key={tag.id}
+                          onClick={() => toggleTag(tag.id)}
+                          className={`px-3 py-1 rounded-full text-sm font-medium transition-all ${
+                            selectedTags.includes(tag.id)
+                              ? 'ring-2 ring-offset-1 ring-gray-400'
+                              : 'opacity-70 hover:opacity-100'
+                          }`}
+                          style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                        >
+                          {tag.name}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
+            </div>
+          )}
+
+          {/* アクティブフィルタ表示 */}
+          {hasActiveFilters && !showFilters && (
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
+              <span className="text-sm text-gray-500">フィルタ:</span>
+              {selectedPriority !== null && (
+                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                  selectedPriority === 1 ? 'bg-red-100 text-red-700' :
+                  selectedPriority === 2 ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'
+                }`}>
+                  重要度: {selectedPriority === 1 ? '高' : selectedPriority === 2 ? '中' : '低'}
+                  <button onClick={() => setSelectedPriority(null)} className="ml-1 hover:opacity-70">×</button>
+                </span>
+              )}
+              {selectedTags.map((tagId) => {
+                const tag = tags.find((t) => t.id === tagId);
+                if (!tag) return null;
+                return (
+                  <span key={tagId} className="px-2 py-1 rounded text-xs font-medium" style={{ backgroundColor: `${tag.color}20`, color: tag.color }}>
+                    {tag.name}
+                    <button onClick={() => toggleTag(tagId)} className="ml-1 hover:opacity-70">×</button>
+                  </span>
+                );
+              })}
             </div>
           )}
         </div>
 
+        {/* 検索結果 */}
+        {(searchQuery || hasActiveFilters) && (
+          <div className="max-w-3xl mx-auto mt-4">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+                <span className="text-sm text-gray-600">{searchResults.length}件の結果</span>
+              </div>
+              {searchResults.length === 0 ? (
+                <div className="p-6 text-center text-gray-500">条件に一致するメモが見つかりません</div>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {searchResults.map((note) => (
+                    <NoteListItem
+                      key={note.id}
+                      note={note}
+                      categoryName={getCategoryName(note.categoryId)}
+                      priorityColor={getPriorityColor(note.priority)}
+                      tags={tags}
+                      onClick={() => navigate(`/notes/${note.id}`)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* メインコンテンツ */}
         {!searchQuery && !hasActiveFilters && (
           <>
-            {/* カテゴリボタン */}
-            <div className="flex items-center gap-2 mb-8">
-              <Link to="/notes?category=common" className="flex items-center gap-2 px-4 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors">
-                <Pin className="w-4 h-4" />
-                共通
+            {/* カテゴリボタン - スマホではアイコンのみ */}
+            <div className="grid grid-cols-4 gap-2 mb-8">
+              <Link 
+                to="/notes?category=common" 
+                className="flex items-center justify-center gap-2 p-3 sm:px-4 sm:py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                title="共通"
+              >
+                <Pin className="w-5 h-5" />
+                <span className="hidden sm:inline text-sm font-medium">共通</span>
               </Link>
-              <Link to="/notes?category=work" className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors">
-                <Briefcase className="w-4 h-4" />
-                仕事
+              <Link 
+                to="/notes?category=work" 
+                className="flex items-center justify-center gap-2 p-3 sm:px-4 sm:py-2 bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                title="仕事"
+              >
+                <Briefcase className="w-5 h-5" />
+                <span className="hidden sm:inline text-sm font-medium">仕事</span>
               </Link>
-              <Link to="/notes?category=private" className="flex items-center gap-2 px-4 py-2 bg-pink-100 text-pink-700 rounded-lg hover:bg-pink-200 transition-colors">
-                <Home className="w-4 h-4" />
-                プライベート
+              <Link 
+                to="/notes?category=private" 
+                className="flex items-center justify-center gap-2 p-3 sm:px-4 sm:py-2 bg-pink-100 text-pink-700 rounded-lg hover:bg-pink-200 transition-colors"
+                title="プライベート"
+              >
+                <Home className="w-5 h-5" />
+                <span className="hidden sm:inline text-sm font-medium">プライベート</span>
               </Link>
-              <Link to="/notes" className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors ml-auto">
-                すべてのメモ
-                <ChevronRight className="w-4 h-4" />
+              <Link 
+                to="/notes" 
+                className="flex items-center justify-center gap-2 p-3 sm:px-4 sm:py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                title="すべてのメモ"
+              >
+                <ChevronRight className="w-5 h-5" />
+                <span className="hidden sm:inline text-sm font-medium">すべて</span>
               </Link>
             </div>
 
@@ -658,35 +675,30 @@ const NoteRow = ({
   };
 
   return (
-    <div className="card w-full px-4 py-3 flex items-center gap-4 hover:bg-gray-50 transition-colors">
+    <div 
+      className="card w-full px-4 py-3 flex items-center gap-4 hover:bg-gray-50 transition-colors cursor-pointer"
+      onClick={onClick}
+    >
       <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${getPriorityColor(note.priority)}`}>
         {hasUrl ? <ExternalLink className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
       </div>
-      
-      <div className="flex-1 min-w-0 cursor-pointer" onClick={onClick}>
-        <h3 className="font-medium text-gray-900 truncate">{note.title}</h3>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium text-gray-900 truncate">{note.title}</h3>
+          {note.isFavorite && <Star className="w-4 h-4 text-amber-500 fill-amber-500 flex-shrink-0" />}
+        </div>
         <p className="text-sm text-gray-500 truncate">{categoryName}</p>
       </div>
-
-      {note.isFavorite && <Star className="w-4 h-4 text-amber-500 fill-amber-500 flex-shrink-0" />}
-
-      {/* 複数URLアイコン表示 */}
       {hasUrl && (
-        <div className="flex items-center gap-1 flex-shrink-0">
-          {note.urls.slice(0, 5).map((urlInfo: UrlInfo, idx: number) => (
-            <a
-              key={idx}
-              href={urlInfo.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-              title={urlInfo.title || urlInfo.url}
-            >
-              <ExternalLink className="w-4 h-4" />
-            </a>
-          ))}
-        </div>
+        <a
+          href={note.urls[0].url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="p-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors flex-shrink-0"
+        >
+          <ExternalLink className="w-4 h-4" />
+        </a>
       )}
     </div>
   );
