@@ -14,12 +14,12 @@ import {
   ChevronDown,
   Plus,
   Trash2,
-  Link,
   Eye,
   Edit3,
-  ImagePlus,
   Loader2,
 } from 'lucide-react';
+import { RichTextToolbar } from './RichTextToolbar';
+import { SlashCommandMenu } from './SlashCommandMenu';
 
 export const NoteModal = () => {
   const { modal, notes, categories, tags, closeModal } = useNotesStore();
@@ -42,6 +42,7 @@ export const NoteModal = () => {
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [tempNoteId, setTempNoteId] = useState<string>('');
+  
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -116,6 +117,11 @@ export const NoteModal = () => {
     }
   };
 
+  // 画像ボタンクリック
+  const handleImageClick = () => {
+    fileInputRef.current?.click();
+  };
+
   // タグの色候補
   const tagColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
@@ -166,6 +172,7 @@ export const NoteModal = () => {
         });
       }
     } else {
+      // 新規作成時はリセット
       setFormData({
         title: '',
         content: '',
@@ -177,31 +184,22 @@ export const NoteModal = () => {
       });
     }
     setErrors({});
-    setTagInput('');
-    setShowTagSuggestions(false);
     setShowPreview(false);
   }, [modal.isOpen, modal.mode, modal.noteId, notes]);
 
-  // メインカテゴリを取得
+  // カテゴリを階層構造で取得
   const mainCategories = categories.filter((c) => c.type === 'main');
-  
-  // サブカテゴリを取得
-  const getSubCategories = (parentId: string) => {
-    return categories.filter((c) => c.type === 'sub' && c.parentId === parentId);
-  };
+  const getSubCategories = (parentId: string) =>
+    categories.filter((c) => c.parentId === parentId);
 
-  // カテゴリ表示名を取得
-  const getCategoryDisplayName = (categoryId: string) => {
-    if (!categoryId) return 'カテゴリを選択';
-    const category = categories.find((c) => c.id === categoryId);
-    if (!category) return 'カテゴリを選択';
-    
-    if (category.type === 'sub' && category.parentId) {
-      const parent = categories.find((c) => c.id === category.parentId);
-      return `${parent?.name || ''} > ${category.name}`;
-    }
-    return category.name;
-  };
+  // 現在選択中のカテゴリ名
+  const selectedCategory = categories.find((c) => c.id === formData.categoryId);
+  const parentCategory = selectedCategory?.parentId
+    ? categories.find((c) => c.id === selectedCategory.parentId)
+    : null;
+  const categoryDisplayName = parentCategory
+    ? `${parentCategory.name} > ${selectedCategory?.name}`
+    : selectedCategory?.name || 'カテゴリを選択';
 
   // URL追加
   const addUrlField = () => {
@@ -307,7 +305,7 @@ export const NoteModal = () => {
       />
 
       {/* モーダル */}
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-slide-up">
+      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-slide-up mx-4">
         <form onSubmit={handleSubmit}>
           {/* ヘッダー */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200">
@@ -357,7 +355,7 @@ export const NoteModal = () => {
               )}
             </div>
 
-            {/* メモ（大きく表示・プレビュー付き） */}
+            {/* メモ（ツールバー + プレビュー付き） */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-700">
@@ -419,68 +417,160 @@ export const NoteModal = () => {
                 </div>
               ) : (
                 <>
+                  {/* ツールバー */}
+                  <RichTextToolbar
+                    textareaRef={textareaRef}
+                    value={formData.content}
+                    onChange={(value) => setFormData({ ...formData, content: value })}
+                    onImageClick={handleImageClick}
+                  />
+                  
+                  {/* テキストエリア */}
                   <div className="relative">
                     <textarea
                       ref={textareaRef}
                       value={formData.content}
                       onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                       onPaste={handlePaste}
-                      placeholder="メモの内容...&#10;&#10;Markdown記法が使えます:&#10;**太字** / *斜体*&#10;- リスト&#10;1. 番号リスト&#10;> 引用&#10;`コード`&#10;&#10;画像: Ctrl+V でペースト可能"
-                      rows={8}
-                      className="input resize-none font-mono text-sm pr-12"
-                      disabled={isUploading}
+                      placeholder="メモの内容...&#10;&#10;/ を入力するとコマンドメニューが表示されます&#10;&#10;Markdown記法が使えます:&#10;**太字** / *斜体*&#10;- リスト&#10;1. 番号リスト"
+                      className="input min-h-[200px] resize-y font-mono text-sm"
                     />
-                    {/* 画像アップロードボタン */}
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isUploading}
-                      className="absolute right-2 top-2 p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
-                      title="画像を追加"
-                    >
-                      {isUploading ? (
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                      ) : (
-                        <ImagePlus className="w-5 h-5" />
-                      )}
-                    </button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFileSelect}
-                      className="hidden"
+                    
+                    {/* スラッシュコマンドメニュー */}
+                    <SlashCommandMenu
+                      textareaRef={textareaRef}
+                      value={formData.content}
+                      onChange={(value) => setFormData({ ...formData, content: value })}
                     />
+                    
+                    {/* アップロード中表示 */}
+                    {isUploading && (
+                      <div className="absolute inset-0 bg-white/80 flex items-center justify-center rounded-lg">
+                        <div className="flex flex-col items-center gap-2">
+                          <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+                          <span className="text-sm text-gray-600">
+                            アップロード中... {Math.round(uploadProgress)}%
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  {isUploading && (
-                    <div className="mt-2">
-                      <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        <span>画像をアップロード中... {uploadProgress}%</span>
-                      </div>
-                      <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
-                        <div 
-                          className="h-full bg-primary-500 transition-all duration-300"
-                          style={{ width: `${uploadProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {errors.image && (
-                    <p className="mt-1 text-sm text-red-500">{errors.image}</p>
-                  )}
+                  
+                  {/* ヒント */}
                   <p className="mt-1 text-xs text-gray-400">
-                    Markdown記法: **太字** *斜体* `コード` - リスト &gt; 引用 | 画像: 右上ボタンまたはCtrl+V
+                    画像は貼り付け（Ctrl+V）またはドラッグ&ドロップでも追加できます
                   </p>
                 </>
               )}
+              {errors.image && (
+                <p className="mt-1 text-sm text-red-500">{errors.image}</p>
+              )}
+              
+              {/* 隠し画像入力 */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
             </div>
 
-            {/* URL（複数対応・タイトル付き） */}
+            {/* カテゴリ */}
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                カテゴリ <span className="text-red-500">*</span>
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                className={`input flex items-center justify-between ${
+                  errors.categoryId ? 'border-red-500' : ''
+                }`}
+              >
+                <span className={selectedCategory ? 'text-gray-900' : 'text-gray-400'}>
+                  {categoryDisplayName}
+                </span>
+                <ChevronDown className="w-4 h-4 text-gray-400" />
+              </button>
+
+              {showCategoryDropdown && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setShowCategoryDropdown(false)}
+                  />
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20 max-h-60 overflow-y-auto">
+                    {mainCategories.map((main) => (
+                      <div key={main.id}>
+                        <div className="px-4 py-2 text-xs font-medium text-gray-500 uppercase">
+                          {main.name}
+                        </div>
+                        {getSubCategories(main.id).map((sub) => (
+                          <button
+                            key={sub.id}
+                            type="button"
+                            onClick={() => {
+                              setFormData({ ...formData, categoryId: sub.id });
+                              setShowCategoryDropdown(false);
+                            }}
+                            className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 ${
+                              formData.categoryId === sub.id
+                                ? 'bg-primary-50 text-primary-700'
+                                : 'text-gray-700'
+                            }`}
+                          >
+                            <Folder className="w-4 h-4" />
+                            {sub.name}
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {errors.categoryId && (
+                <p className="mt-1 text-sm text-red-500">{errors.categoryId}</p>
+              )}
+            </div>
+
+            {/* 重要度 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                重要度
+              </label>
+              <div className="flex gap-3">
+                {[
+                  { value: 1, label: '高', className: 'border-red-300 bg-red-50 text-red-700' },
+                  { value: 2, label: '中', className: 'border-amber-300 bg-amber-50 text-amber-700' },
+                  { value: 3, label: '低', className: 'border-blue-300 bg-blue-50 text-blue-700' },
+                ].map((priority) => (
+                  <button
+                    key={priority.value}
+                    type="button"
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        priority: priority.value as 1 | 2 | 3,
+                      })
+                    }
+                    className={`px-4 py-2 rounded-lg border-2 font-medium transition-all ${
+                      formData.priority === priority.value
+                        ? priority.className
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+                    }`}
+                  >
+                    {priority.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* URL */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-700">
-                  URL（最大5件）
+                  関連URL（最大5件）
                 </label>
                 {formData.urls.length < 5 && (
                   <button
@@ -495,37 +585,30 @@ export const NoteModal = () => {
               </div>
               <div className="space-y-3">
                 {formData.urls.map((urlInfo, index) => (
-                  <div key={index} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="flex-1">
-                        <input
-                          type="text"
-                          value={urlInfo.title}
-                          onChange={(e) => updateUrl(index, 'title', e.target.value)}
-                          placeholder="リンクのタイトル（任意）"
-                          className="input py-2 text-sm"
-                        />
-                      </div>
-                      {formData.urls.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeUrlField(index)}
-                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                    <div className="relative">
-                      <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <div key={index} className="flex gap-2">
+                    <div className="flex-1 flex gap-2">
                       <input
                         type="text"
+                        value={urlInfo.title}
+                        onChange={(e) => updateUrl(index, 'title', e.target.value)}
+                        placeholder="タイトル（任意）"
+                        className="input flex-[2]"
+                      />
+                      <input
+                        type="url"
                         value={urlInfo.url}
                         onChange={(e) => updateUrl(index, 'url', e.target.value)}
-                        placeholder="https://example.com"
-                        className={`input pl-10 py-2 text-sm ${errors.urls ? 'border-red-500' : ''}`}
+                        placeholder="https://..."
+                        className={`input flex-[3] ${errors.urls && urlInfo.url && !isValidUrl(urlInfo.url) ? 'border-red-500' : ''}`}
                       />
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => removeUrlField(index)}
+                      className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 ))}
               </div>
@@ -567,15 +650,13 @@ export const NoteModal = () => {
                       className="fixed inset-0 z-10"
                       onClick={() => setShowTagSuggestions(false)}
                     />
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20 max-h-40 overflow-auto">
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20 max-h-40 overflow-y-auto">
                       {filteredTags.map((tag) => (
                         <button
                           key={tag.id}
                           type="button"
                           onClick={() => {
-                            if (!formData.tags.includes(tag.id)) {
-                              setFormData({ ...formData, tags: [...formData.tags, tag.id] });
-                            }
+                            setFormData({ ...formData, tags: [...formData.tags, tag.id] });
                             setTagInput('');
                             setShowTagSuggestions(false);
                           }}
@@ -593,14 +674,7 @@ export const NoteModal = () => {
                 )}
               </div>
 
-              {/* 新規タグ作成のヒント */}
-              {tagInput && !filteredTags.find(t => t.name.toLowerCase() === tagInput.toLowerCase()) && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Enterで「{tagInput}」を新規タグとして作成
-                </p>
-              )}
-
-              {/* 選択済みタグ */}
+              {/* 選択されたタグ */}
               {formData.tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {formData.tags.map((tagId) => {
@@ -609,7 +683,7 @@ export const NoteModal = () => {
                     return (
                       <span
                         key={tagId}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm"
+                        className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm"
                         style={{
                           backgroundColor: `${tag.color}20`,
                           color: tag.color,
@@ -618,12 +692,12 @@ export const NoteModal = () => {
                         {tag.name}
                         <button
                           type="button"
-                          onClick={() => {
+                          onClick={() =>
                             setFormData({
                               ...formData,
                               tags: formData.tags.filter((id) => id !== tagId),
-                            });
-                          }}
+                            })
+                          }
                           className="hover:opacity-70"
                         >
                           <X className="w-3 h-3" />
@@ -635,109 +709,11 @@ export const NoteModal = () => {
               )}
             </div>
 
-            {/* カテゴリ & 重要度 */}
-            <div className="grid grid-cols-2 gap-4">
-              {/* カテゴリ */}
-              <div className="relative">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  カテゴリ <span className="text-red-500">*</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                  className={`input text-left flex items-center justify-between ${
-                    errors.categoryId ? 'border-red-500' : ''
-                  }`}
-                >
-                  <span className={formData.categoryId ? 'text-gray-900' : 'text-gray-400'}>
-                    {getCategoryDisplayName(formData.categoryId)}
-                  </span>
-                  <ChevronDown className="w-4 h-4 text-gray-400" />
-                </button>
-
-                {showCategoryDropdown && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-10"
-                      onClick={() => setShowCategoryDropdown(false)}
-                    />
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20 max-h-60 overflow-auto">
-                      {mainCategories.map((mainCat) => {
-                        const subCategories = getSubCategories(mainCat.id);
-                        return (
-                          <div key={mainCat.id}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setFormData({ ...formData, categoryId: mainCat.id });
-                                setShowCategoryDropdown(false);
-                              }}
-                              className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2 ${
-                                formData.categoryId === mainCat.id ? 'bg-primary-50 text-primary-700' : ''
-                              }`}
-                            >
-                              <Folder className="w-4 h-4" />
-                              {mainCat.name}
-                            </button>
-                            {subCategories.map((subCat) => (
-                              <button
-                                key={subCat.id}
-                                type="button"
-                                onClick={() => {
-                                  setFormData({ ...formData, categoryId: subCat.id });
-                                  setShowCategoryDropdown(false);
-                                }}
-                                className={`w-full px-4 py-2 pl-10 text-left text-sm hover:bg-gray-50 ${
-                                  formData.categoryId === subCat.id ? 'bg-primary-50 text-primary-700' : ''
-                                }`}
-                              >
-                                {subCat.name}
-                              </button>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-                {errors.categoryId && (
-                  <p className="mt-1 text-sm text-red-500">{errors.categoryId}</p>
-                )}
-              </div>
-
-              {/* 重要度 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  重要度
-                </label>
-                <div className="flex gap-2">
-                  {[
-                    { value: 1, label: '高', className: 'bg-red-100 text-red-700 border-red-200' },
-                    { value: 2, label: '中', className: 'bg-yellow-100 text-yellow-700 border-yellow-200' },
-                    { value: 3, label: '低', className: 'bg-blue-100 text-blue-700 border-blue-200' },
-                  ].map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setFormData({ ...formData, priority: option.value as 1 | 2 | 3 })}
-                      className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
-                        formData.priority === option.value
-                          ? option.className + ' border-2'
-                          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* エラーメッセージ */}
+            {/* エラー */}
             {errors.submit && (
-              <div className="flex items-center gap-2 p-4 bg-red-50 rounded-lg text-red-600">
+              <div className="p-4 bg-red-50 rounded-lg flex items-center gap-2 text-red-700">
                 <AlertCircle className="w-5 h-5" />
-                <span className="text-sm">{errors.submit}</span>
+                {errors.submit}
               </div>
             )}
           </div>
@@ -748,20 +724,24 @@ export const NoteModal = () => {
               type="button"
               onClick={closeModal}
               className="btn btn-secondary"
+              disabled={isSubmitting}
             >
               キャンセル
             </button>
             <button
               type="submit"
-              disabled={isSubmitting}
               className="btn btn-primary"
+              disabled={isSubmitting}
             >
               {isSubmitting ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  保存中...
+                </>
               ) : (
                 <>
                   <Save className="w-4 h-4" />
-                  {modal.mode === 'edit' ? '更新' : '保存'}
+                  保存
                 </>
               )}
             </button>
