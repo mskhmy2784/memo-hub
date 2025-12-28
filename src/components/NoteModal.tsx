@@ -297,8 +297,8 @@ export const NoteModal = () => {
         onClick={closeModal}
       />
 
-      {/* モーダル */}
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-slide-up">
+      {/* モーダル - PC時は lg:max-w-4xl で幅拡大 */}
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl lg:max-w-4xl max-h-[90vh] overflow-y-auto animate-slide-up">
         <form onSubmit={handleSubmit}>
           {/* ヘッダー */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200">
@@ -382,7 +382,7 @@ export const NoteModal = () => {
                 </div>
               </div>
               {showPreview ? (
-                <div className="min-h-[200px] p-4 border border-gray-200 rounded-lg bg-white prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
+                <div className="min-h-[200px] md:min-h-[300px] lg:min-h-[400px] p-4 border border-gray-200 rounded-lg bg-white prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
                   {formData.content ? (
                     <ReactMarkdown 
                       remarkPlugins={[remarkGfm]}
@@ -419,7 +419,7 @@ export const NoteModal = () => {
                       placeholder="メモの内容...&#10;&#10;Markdown記法が使えます:&#10;**太字** / *斜体*&#10;- リスト&#10;1. 番号リスト&#10;> 引用&#10;`コード`&#10;&#10;画像: Ctrl+V でペースト可能"
                       rows={8}
                       style={mobileTextareaStyle}
-                      className="input resize-none font-mono text-sm pr-12"
+                      className="input resize-none font-mono text-sm pr-12 min-h-[200px] md:min-h-[300px] lg:min-h-[400px]"
                       disabled={isUploading}
                     />
                     <button
