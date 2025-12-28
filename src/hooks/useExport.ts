@@ -19,7 +19,6 @@ export interface ExportContext {
 
 // 画像URLをダミーテキストに置換
 const replaceImagesWithPlaceholder = (content: string): string => {
-  // Markdown画像記法: ![alt](url)
   return content.replace(/!\[([^\]]*)\]\([^)]+\)/g, '<<画像>>');
 };
 
@@ -31,12 +30,10 @@ const toPlainText = (
 ): string => {
   const lines: string[] = [];
 
-  // タイトル
   lines.push(note.title);
   lines.push('='.repeat(note.title.length * 2));
   lines.push('');
 
-  // メタ情報
   const metaLines: string[] = [];
   if (options.includeCategory && context.categoryPath) {
     metaLines.push(`カテゴリ: ${context.categoryPath}`);
@@ -58,11 +55,9 @@ const toPlainText = (
     lines.push('');
   }
 
-  // 本文（画像をダミーに置換）
   const contentWithPlaceholder = replaceImagesWithPlaceholder(note.content);
   lines.push(contentWithPlaceholder);
 
-  // URL
   if (options.includeUrls && note.urls && note.urls.length > 0) {
     lines.push('');
     lines.push('-'.repeat(40));
@@ -88,11 +83,9 @@ const toMarkdown = (
 ): string => {
   const lines: string[] = [];
 
-  // タイトル
   lines.push(`# ${note.title}`);
   lines.push('');
 
-  // メタ情報
   const metaLines: string[] = [];
   if (options.includeCategory && context.categoryPath) {
     metaLines.push(`**カテゴリ**: ${context.categoryPath}`);
@@ -114,11 +107,9 @@ const toMarkdown = (
     lines.push('');
   }
 
-  // 本文（画像をダミーに置換）
   const contentWithPlaceholder = replaceImagesWithPlaceholder(note.content);
   lines.push(contentWithPlaceholder);
 
-  // URL
   if (options.includeUrls && note.urls && note.urls.length > 0) {
     lines.push('');
     lines.push('---');
@@ -151,32 +142,16 @@ const downloadFile = (content: string | Blob, fileName: string, mimeType: string
 const markdownToPlainText = (markdown: string): string => {
   let text = markdown;
 
-  // 見出し記号を除去
   text = text.replace(/^#{1,6}\s+/gm, '');
-
-  // 太字・斜体を除去
   text = text.replace(/\*\*(.+?)\*\*/g, '$1');
   text = text.replace(/\*(.+?)\*/g, '$1');
   text = text.replace(/__(.+?)__/g, '$1');
   text = text.replace(/_(.+?)_/g, '$1');
-
-  // インラインコードを除去
   text = text.replace(/`([^`]+)`/g, '$1');
-
-  // リンクをテキストに変換
   text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
-
-  // 画像をプレースホルダに
   text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '<<画像>>');
-
-  // リスト記号を整理
   text = text.replace(/^[-*]\s+/gm, '• ');
-  text = text.replace(/^\d+\.\s+/gm, (match) => match);
-
-  // 引用記号を整理
   text = text.replace(/^>\s+/gm, '｜ ');
-
-  // コードブロックを整理
   text = text.replace(/```[\s\S]*?```/g, (match) => {
     return match.replace(/```\w*\n?/g, '').trim();
   });
@@ -184,40 +159,216 @@ const markdownToPlainText = (markdown: string): string => {
   return text;
 };
 
-// PDF生成（テキスト選択可能）
-const generatePdf = async (
+// ArrayBufferをBase64に変換（大きなファイル対応）
+const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 8192;
+  let binary = '';
+  
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  
+  return btoa(binary);
+};
+
+// PDF生成（ブラウザ印刷機能を使用）
+const generatePdfViaPrint = (
+  note: Note,
+  options: ExportOptions,
+  context: ExportContext,
+  _fileName: string
+): void => {
+  // 印刷用のHTMLを生成
+  const printContent = generatePrintHtml(note, options, context);
+  
+  // 新しいウィンドウを開いて印刷
+  const printWindow = window.open('', '_blank', 'width=800,height=600');
+  if (!printWindow) {
+    throw new Error('ポップアップがブロックされました。ポップアップを許可してください。');
+  }
+  
+  printWindow.document.write(printContent);
+  printWindow.document.close();
+  
+  // 印刷ダイアログを表示
+  printWindow.onload = () => {
+    printWindow.print();
+  };
+};
+
+// 印刷用HTML生成
+const generatePrintHtml = (
+  note: Note,
+  options: ExportOptions,
+  context: ExportContext
+): string => {
+  const styles = `
+    <style>
+      @media print {
+        body { margin: 0; padding: 20mm; }
+        @page { margin: 15mm; }
+      }
+      body {
+        font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
+        font-size: 12pt;
+        line-height: 1.8;
+        color: #333;
+        max-width: 210mm;
+        margin: 0 auto;
+        padding: 20px;
+        background: white;
+      }
+      h1 {
+        font-size: 20pt;
+        border-bottom: 2px solid #333;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+      }
+      .meta {
+        background: #f5f5f5;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-size: 10pt;
+      }
+      .meta p { margin: 5px 0; }
+      .meta strong { color: #555; }
+      .content {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+      .urls {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #ddd;
+      }
+      .urls h2 {
+        font-size: 14pt;
+        margin-bottom: 10px;
+      }
+      .urls ul { list-style: none; padding: 0; }
+      .urls li { margin: 8px 0; }
+      .urls a { color: #0066cc; text-decoration: none; }
+      .print-instructions {
+        background: #e3f2fd;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-size: 10pt;
+      }
+      @media print {
+        .print-instructions { display: none; }
+      }
+    </style>
+  `;
+
+  const escapeHtml = (text: string): string => {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  };
+
+  let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(note.title)}</title>${styles}</head><body>`;
+
+  // 印刷手順（画面表示時のみ）
+  html += `<div class="print-instructions">
+    <strong>PDFとして保存する方法:</strong><br>
+    1. 印刷ダイアログで「送信先」を「PDFに保存」に変更<br>
+    2. 「保存」をクリック<br>
+    3. ファイル名を「${escapeHtml(note.title)}.pdf」として保存
+  </div>`;
+
+  html += `<h1>${escapeHtml(note.title)}</h1>`;
+
+  // メタ情報
+  const metaItems: string[] = [];
+  if (options.includeCategory && context.categoryPath) {
+    metaItems.push(`<p><strong>カテゴリ:</strong> ${escapeHtml(context.categoryPath)}</p>`);
+  }
+  if (options.includeTags && context.tagNames.length > 0) {
+    metaItems.push(`<p><strong>タグ:</strong> ${context.tagNames.map(t => `#${escapeHtml(t)}`).join(' ')}</p>`);
+  }
+  if (options.includeCreatedAt) {
+    metaItems.push(`<p><strong>作成日:</strong> ${format(note.createdAt, 'yyyy-MM-dd HH:mm')}</p>`);
+  }
+  if (options.includeUpdatedAt) {
+    metaItems.push(`<p><strong>更新日:</strong> ${format(note.updatedAt, 'yyyy-MM-dd HH:mm')}</p>`);
+  }
+
+  if (metaItems.length > 0) {
+    html += `<div class="meta">${metaItems.join('')}</div>`;
+  }
+
+  // 本文
+  const plainContent = markdownToPlainText(note.content);
+  html += `<div class="content">${escapeHtml(plainContent).replace(/\n/g, '<br>')}</div>`;
+
+  // URL
+  if (options.includeUrls && note.urls && note.urls.length > 0) {
+    html += '<div class="urls"><h2>関連URL</h2><ul>';
+    note.urls.forEach((urlInfo) => {
+      const title = urlInfo.title || urlInfo.url;
+      html += `<li><a href="${escapeHtml(urlInfo.url)}" target="_blank">${escapeHtml(title)}</a></li>`;
+    });
+    html += '</ul></div>';
+  }
+
+  html += '</body></html>';
+  return html;
+};
+
+// PDF生成（jsPDF使用）- フォント読み込み改善版
+const generatePdfWithJsPdf = async (
   note: Note,
   options: ExportOptions,
   context: ExportContext,
   fileName: string
 ): Promise<void> => {
-  // jsPDFを動的インポート
   const { default: jsPDF } = await import('jspdf');
 
-  // Google Fonts から Noto Sans JP を読み込む
-  const fontUrl = 'https://fonts.gstatic.com/s/notosansjp/v53/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFJEk757Y0rw_qMHVdbR2L8Y9QTJ1LwkRmR5GprQAe-T3Ow.ttf';
+  // Noto Sans JP フォントを読み込む
+  const fontUrl = 'https://cdn.jsdelivr.net/npm/@aspect-build/aspect-font-noto-sans-jp@0.0.1/fonts/NotoSansJP-Regular.ttf';
   
-  // フォントをフェッチしてBase64に変換
-  const fontResponse = await fetch(fontUrl);
-  const fontArrayBuffer = await fontResponse.arrayBuffer();
-  const fontBase64 = btoa(
-    new Uint8Array(fontArrayBuffer).reduce(
-      (data, byte) => data + String.fromCharCode(byte),
-      ''
-    )
-  );
+  let fontBase64: string | null = null;
+  
+  try {
+    const response = await fetch(fontUrl, { mode: 'cors' });
+    if (!response.ok) throw new Error('Font fetch failed');
+    const arrayBuffer = await response.arrayBuffer();
+    fontBase64 = arrayBufferToBase64(arrayBuffer);
+  } catch (e) {
+    console.warn('フォント読み込み失敗、代替フォントを試行:', e);
+    
+    // 代替フォントURL
+    const altFontUrl = 'https://raw.githubusercontent.com/nicovank/NotoSansJP/main/NotoSansJP-Regular.otf';
+    try {
+      const response = await fetch(altFontUrl, { mode: 'cors' });
+      if (!response.ok) throw new Error('Alt font fetch failed');
+      const arrayBuffer = await response.arrayBuffer();
+      fontBase64 = arrayBufferToBase64(arrayBuffer);
+    } catch (e2) {
+      console.warn('代替フォントも読み込み失敗:', e2);
+    }
+  }
 
-  // PDF作成
   const pdf = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
     format: 'a4',
   });
 
-  // フォントを追加
-  pdf.addFileToVFS('NotoSansJP-Regular.ttf', fontBase64);
-  pdf.addFont('NotoSansJP-Regular.ttf', 'NotoSansJP', 'normal');
-  pdf.setFont('NotoSansJP');
+  // フォント設定
+  if (fontBase64) {
+    try {
+      pdf.addFileToVFS('NotoSansJP-Regular.ttf', fontBase64);
+      pdf.addFont('NotoSansJP-Regular.ttf', 'NotoSansJP', 'normal');
+      pdf.setFont('NotoSansJP');
+    } catch (e) {
+      console.warn('フォント追加失敗、デフォルトフォント使用:', e);
+    }
+  }
 
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
@@ -225,11 +376,10 @@ const generatePdf = async (
   const contentWidth = pageWidth - margin * 2;
   let y = margin;
 
-  // テキストを追加するヘルパー関数
   const addText = (
     text: string,
     fontSize: number,
-    textOptions?: { bold?: boolean; color?: string; maxWidth?: number }
+    textOptions?: { color?: string }
   ) => {
     pdf.setFontSize(fontSize);
     if (textOptions?.color) {
@@ -242,12 +392,10 @@ const generatePdf = async (
       pdf.setTextColor(0, 0, 0);
     }
 
-    const maxWidth = textOptions?.maxWidth || contentWidth;
-    const lines = pdf.splitTextToSize(text, maxWidth);
+    const lines = pdf.splitTextToSize(text, contentWidth);
     const lineHeight = fontSize * 0.5;
 
     for (const line of lines) {
-      // ページを超える場合は改ページ
       if (y + lineHeight > pageHeight - margin) {
         pdf.addPage();
         y = margin;
@@ -257,7 +405,6 @@ const generatePdf = async (
     }
   };
 
-  // 空行を追加
   const addSpace = (height: number) => {
     y += height;
     if (y > pageHeight - margin) {
@@ -266,7 +413,6 @@ const generatePdf = async (
     }
   };
 
-  // 区切り線を追加
   const addLine = () => {
     if (y + 5 > pageHeight - margin) {
       pdf.addPage();
@@ -348,7 +494,6 @@ const generatePdf = async (
     }
   }
 
-  // PDFを保存
   pdf.save(`${fileName}.pdf`);
 };
 
@@ -375,7 +520,14 @@ export const useExport = () => {
         }
 
         case 'pdf': {
-          await generatePdf(note, options, context, fileName);
+          try {
+            // まずjsPDFを試行
+            await generatePdfWithJsPdf(note, options, context, fileName);
+          } catch (error) {
+            console.warn('jsPDF失敗、印刷機能にフォールバック:', error);
+            // 失敗した場合はブラウザの印刷機能を使用
+            generatePdfViaPrint(note, options, context, fileName);
+          }
           break;
         }
       }
@@ -383,7 +535,6 @@ export const useExport = () => {
     []
   );
 
-  // プレビュー用のテキスト生成
   const generatePreview = useCallback(
     (
       note: Note,
