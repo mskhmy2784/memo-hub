@@ -159,18 +159,11 @@ const markdownToPlainText = (markdown: string): string => {
   return text;
 };
 
-// ArrayBufferをBase64に変換（大きなファイル対応）
-const arrayBufferToBase64 = (buffer: ArrayBuffer): string => {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 8192;
-  let binary = '';
-  
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode.apply(null, Array.from(chunk));
-  }
-  
-  return btoa(binary);
+// HTMLエスケープ
+const escapeHtml = (text: string): string => {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 };
 
 // PDF生成（ブラウザ印刷機能を使用）
@@ -178,41 +171,21 @@ const generatePdfViaPrint = (
   note: Note,
   options: ExportOptions,
   context: ExportContext,
-  _fileName: string
+  fileName: string
 ): void => {
-  // 印刷用のHTMLを生成
-  const printContent = generatePrintHtml(note, options, context);
-  
-  // 新しいウィンドウを開いて印刷
-  const printWindow = window.open('', '_blank', 'width=800,height=600');
-  if (!printWindow) {
-    throw new Error('ポップアップがブロックされました。ポップアップを許可してください。');
-  }
-  
-  printWindow.document.write(printContent);
-  printWindow.document.close();
-  
-  // 印刷ダイアログを表示
-  printWindow.onload = () => {
-    printWindow.print();
-  };
-};
-
-// 印刷用HTML生成
-const generatePrintHtml = (
-  note: Note,
-  options: ExportOptions,
-  context: ExportContext
-): string => {
   const styles = `
     <style>
       @media print {
-        body { margin: 0; padding: 20mm; }
-        @page { margin: 15mm; }
+        body { margin: 0; padding: 15mm; }
+        @page { margin: 10mm; size: A4; }
+        .no-print { display: none !important; }
+      }
+      * {
+        box-sizing: border-box;
       }
       body {
-        font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif;
-        font-size: 12pt;
+        font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Yu Gothic", "Meiryo", sans-serif;
+        font-size: 11pt;
         line-height: 1.8;
         color: #333;
         max-width: 210mm;
@@ -221,65 +194,106 @@ const generatePrintHtml = (
         background: white;
       }
       h1 {
-        font-size: 20pt;
+        font-size: 18pt;
+        font-weight: bold;
         border-bottom: 2px solid #333;
-        padding-bottom: 10px;
-        margin-bottom: 20px;
+        padding-bottom: 8px;
+        margin: 0 0 16px 0;
       }
       .meta {
         background: #f5f5f5;
-        padding: 15px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-        font-size: 10pt;
+        padding: 12px 16px;
+        border-radius: 6px;
+        margin-bottom: 16px;
+        font-size: 9pt;
       }
-      .meta p { margin: 5px 0; }
-      .meta strong { color: #555; }
+      .meta p { 
+        margin: 4px 0; 
+      }
+      .meta strong { 
+        color: #555;
+        display: inline-block;
+        min-width: 70px;
+      }
+      .divider {
+        border: none;
+        border-top: 1px solid #ddd;
+        margin: 16px 0;
+      }
       .content {
         white-space: pre-wrap;
         word-wrap: break-word;
+        font-size: 11pt;
+        line-height: 1.8;
       }
       .urls {
-        margin-top: 30px;
-        padding-top: 20px;
+        margin-top: 24px;
+        padding-top: 16px;
         border-top: 1px solid #ddd;
       }
       .urls h2 {
-        font-size: 14pt;
-        margin-bottom: 10px;
+        font-size: 12pt;
+        font-weight: bold;
+        margin: 0 0 12px 0;
       }
-      .urls ul { list-style: none; padding: 0; }
-      .urls li { margin: 8px 0; }
-      .urls a { color: #0066cc; text-decoration: none; }
-      .print-instructions {
-        background: #e3f2fd;
-        padding: 15px;
+      .urls ul { 
+        list-style: none; 
+        padding: 0; 
+        margin: 0;
+      }
+      .urls li { 
+        margin: 6px 0;
+        font-size: 10pt;
+      }
+      .urls a { 
+        color: #0066cc; 
+        text-decoration: none; 
+      }
+      .instructions {
+        background: #e8f4fd;
+        border: 1px solid #b3d9f7;
+        padding: 16px;
         border-radius: 8px;
         margin-bottom: 20px;
         font-size: 10pt;
       }
-      @media print {
-        .print-instructions { display: none; }
+      .instructions h3 {
+        margin: 0 0 8px 0;
+        font-size: 11pt;
+        color: #1565c0;
+      }
+      .instructions ol {
+        margin: 0;
+        padding-left: 20px;
+      }
+      .instructions li {
+        margin: 4px 0;
+      }
+      .instructions .filename {
+        background: #fff;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 9pt;
       }
     </style>
   `;
 
-  const escapeHtml = (text: string): string => {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  };
+  let html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>${escapeHtml(note.title)}</title>${styles}</head><body>`;
 
-  let html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(note.title)}</title>${styles}</head><body>`;
+  // 印刷手順（印刷時は非表示）
+  html += `
+    <div class="instructions no-print">
+      <h3>📄 PDFとして保存する手順</h3>
+      <ol>
+        <li>印刷ダイアログの「送信先」または「プリンター」を <strong>「PDFに保存」</strong> に変更</li>
+        <li>「保存」または「印刷」をクリック</li>
+        <li>ファイル名: <span class="filename">${escapeHtml(fileName)}.pdf</span></li>
+      </ol>
+    </div>
+  `;
 
-  // 印刷手順（画面表示時のみ）
-  html += `<div class="print-instructions">
-    <strong>PDFとして保存する方法:</strong><br>
-    1. 印刷ダイアログで「送信先」を「PDFに保存」に変更<br>
-    2. 「保存」をクリック<br>
-    3. ファイル名を「${escapeHtml(note.title)}.pdf」として保存
-  </div>`;
-
+  // タイトル
   html += `<h1>${escapeHtml(note.title)}</h1>`;
 
   // メタ情報
@@ -301,6 +315,9 @@ const generatePrintHtml = (
     html += `<div class="meta">${metaItems.join('')}</div>`;
   }
 
+  // 区切り線
+  html += '<hr class="divider">';
+
   // 本文
   const plainContent = markdownToPlainText(note.content);
   html += `<div class="content">${escapeHtml(plainContent).replace(/\n/g, '<br>')}</div>`;
@@ -310,191 +327,29 @@ const generatePrintHtml = (
     html += '<div class="urls"><h2>関連URL</h2><ul>';
     note.urls.forEach((urlInfo) => {
       const title = urlInfo.title || urlInfo.url;
-      html += `<li><a href="${escapeHtml(urlInfo.url)}" target="_blank">${escapeHtml(title)}</a></li>`;
+      html += `<li>• <a href="${escapeHtml(urlInfo.url)}" target="_blank">${escapeHtml(title)}</a></li>`;
     });
     html += '</ul></div>';
   }
 
   html += '</body></html>';
-  return html;
-};
 
-// PDF生成（jsPDF使用）- フォント読み込み改善版
-const generatePdfWithJsPdf = async (
-  note: Note,
-  options: ExportOptions,
-  context: ExportContext,
-  fileName: string
-): Promise<void> => {
-  const { default: jsPDF } = await import('jspdf');
-
-  // Noto Sans JP フォントを読み込む
-  const fontUrl = 'https://cdn.jsdelivr.net/npm/@aspect-build/aspect-font-noto-sans-jp@0.0.1/fonts/NotoSansJP-Regular.ttf';
-  
-  let fontBase64: string | null = null;
-  
-  try {
-    const response = await fetch(fontUrl, { mode: 'cors' });
-    if (!response.ok) throw new Error('Font fetch failed');
-    const arrayBuffer = await response.arrayBuffer();
-    fontBase64 = arrayBufferToBase64(arrayBuffer);
-  } catch (e) {
-    console.warn('フォント読み込み失敗、代替フォントを試行:', e);
-    
-    // 代替フォントURL
-    const altFontUrl = 'https://raw.githubusercontent.com/nicovank/NotoSansJP/main/NotoSansJP-Regular.otf';
-    try {
-      const response = await fetch(altFontUrl, { mode: 'cors' });
-      if (!response.ok) throw new Error('Alt font fetch failed');
-      const arrayBuffer = await response.arrayBuffer();
-      fontBase64 = arrayBufferToBase64(arrayBuffer);
-    } catch (e2) {
-      console.warn('代替フォントも読み込み失敗:', e2);
-    }
+  // 新しいウィンドウを開いて印刷
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('ポップアップがブロックされました。\nブラウザの設定でポップアップを許可してください。');
+    return;
   }
 
-  const pdf = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4',
-  });
+  printWindow.document.write(html);
+  printWindow.document.close();
 
-  // フォント設定
-  if (fontBase64) {
-    try {
-      pdf.addFileToVFS('NotoSansJP-Regular.ttf', fontBase64);
-      pdf.addFont('NotoSansJP-Regular.ttf', 'NotoSansJP', 'normal');
-      pdf.setFont('NotoSansJP');
-    } catch (e) {
-      console.warn('フォント追加失敗、デフォルトフォント使用:', e);
-    }
-  }
-
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 20;
-  const contentWidth = pageWidth - margin * 2;
-  let y = margin;
-
-  const addText = (
-    text: string,
-    fontSize: number,
-    textOptions?: { color?: string }
-  ) => {
-    pdf.setFontSize(fontSize);
-    if (textOptions?.color) {
-      const hex = textOptions.color.replace('#', '');
-      const r = parseInt(hex.substring(0, 2), 16);
-      const g = parseInt(hex.substring(2, 4), 16);
-      const b = parseInt(hex.substring(4, 6), 16);
-      pdf.setTextColor(r, g, b);
-    } else {
-      pdf.setTextColor(0, 0, 0);
-    }
-
-    const lines = pdf.splitTextToSize(text, contentWidth);
-    const lineHeight = fontSize * 0.5;
-
-    for (const line of lines) {
-      if (y + lineHeight > pageHeight - margin) {
-        pdf.addPage();
-        y = margin;
-      }
-      pdf.text(line, margin, y);
-      y += lineHeight;
-    }
+  // ページ読み込み完了後に印刷ダイアログを表示
+  printWindow.onload = () => {
+    setTimeout(() => {
+      printWindow.print();
+    }, 250);
   };
-
-  const addSpace = (height: number) => {
-    y += height;
-    if (y > pageHeight - margin) {
-      pdf.addPage();
-      y = margin;
-    }
-  };
-
-  const addLine = () => {
-    if (y + 5 > pageHeight - margin) {
-      pdf.addPage();
-      y = margin;
-    }
-    pdf.setDrawColor(200, 200, 200);
-    pdf.line(margin, y, pageWidth - margin, y);
-    y += 5;
-  };
-
-  // タイトル
-  addText(note.title, 18);
-  addSpace(5);
-
-  // メタ情報
-  const metaItems: string[] = [];
-  if (options.includeCategory && context.categoryPath) {
-    metaItems.push(`カテゴリ: ${context.categoryPath}`);
-  }
-  if (options.includeTags && context.tagNames.length > 0) {
-    metaItems.push(`タグ: ${context.tagNames.map(t => `#${t}`).join(' ')}`);
-  }
-  if (options.includeCreatedAt) {
-    metaItems.push(`作成日: ${format(note.createdAt, 'yyyy-MM-dd HH:mm')}`);
-  }
-  if (options.includeUpdatedAt) {
-    metaItems.push(`更新日: ${format(note.updatedAt, 'yyyy-MM-dd HH:mm')}`);
-  }
-
-  if (metaItems.length > 0) {
-    pdf.setFillColor(245, 245, 245);
-    const metaHeight = metaItems.length * 6 + 8;
-    
-    if (y + metaHeight > pageHeight - margin) {
-      pdf.addPage();
-      y = margin;
-    }
-    
-    pdf.roundedRect(margin, y - 2, contentWidth, metaHeight, 3, 3, 'F');
-    y += 4;
-    
-    for (const item of metaItems) {
-      addText(item, 9, { color: '#666666' });
-    }
-    addSpace(5);
-  }
-
-  addLine();
-  addSpace(3);
-
-  // 本文
-  const plainContent = markdownToPlainText(note.content);
-  const paragraphs = plainContent.split('\n');
-
-  for (const paragraph of paragraphs) {
-    if (paragraph.trim() === '') {
-      addSpace(3);
-    } else {
-      addText(paragraph, 11);
-    }
-  }
-
-  // URL
-  if (options.includeUrls && note.urls && note.urls.length > 0) {
-    addSpace(5);
-    addLine();
-    addSpace(3);
-    
-    addText('関連URL', 12);
-    addSpace(3);
-
-    for (const urlInfo of note.urls) {
-      const title = urlInfo.title || urlInfo.url;
-      addText(`• ${title}`, 10);
-      if (urlInfo.title) {
-        addText(`  ${urlInfo.url}`, 9, { color: '#0066cc' });
-      }
-      addSpace(2);
-    }
-  }
-
-  pdf.save(`${fileName}.pdf`);
 };
 
 export const useExport = () => {
@@ -520,14 +375,7 @@ export const useExport = () => {
         }
 
         case 'pdf': {
-          try {
-            // まずjsPDFを試行
-            await generatePdfWithJsPdf(note, options, context, fileName);
-          } catch (error) {
-            console.warn('jsPDF失敗、印刷機能にフォールバック:', error);
-            // 失敗した場合はブラウザの印刷機能を使用
-            generatePdfViaPrint(note, options, context, fileName);
-          }
+          generatePdfViaPrint(note, options, context, fileName);
           break;
         }
       }

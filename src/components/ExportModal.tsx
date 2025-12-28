@@ -293,8 +293,7 @@ export const ExportModal = ({
           {options.format === 'pdf' && (
             <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-sm text-blue-700">
-                PDF形式では、メモ内の画像も埋め込まれます。
-                生成に数秒かかる場合があります。
+                印刷ダイアログが開きます。「送信先」を「PDFに保存」に変更して保存してください。
               </p>
             </div>
           )}
