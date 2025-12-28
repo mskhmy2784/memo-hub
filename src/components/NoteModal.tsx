@@ -463,7 +463,7 @@ export const NoteModal = () => {
               </div>
               {showPreview ? (
                 // プレビューエリア - 案2: 高さを拡張
-                <div className="min-h-[200px] md:min-h-[300px] lg:min-h-[400px] p-4 border border-gray-200 rounded-lg bg-white prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
+                <div className="min-h-[300px] md:min-h-[350px] lg:min-h-[400px] p-4 border border-gray-200 rounded-lg bg-white prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
                   {formData.content ? (
                     <ReactMarkdown 
                       remarkPlugins={[remarkGfm]}
@@ -508,7 +508,7 @@ export const NoteModal = () => {
                       onKeyDown={handleKeyDown}
                       onPaste={handlePaste}
                       placeholder="メモの内容...&#10;&#10;/ を入力するとコマンドメニューが表示されます&#10;&#10;Markdown記法が使えます:&#10;**太字** / *斜体*&#10;- リスト&#10;1. 番号リスト"
-                      className="input min-h-[200px] md:min-h-[300px] lg:min-h-[400px] resize-y font-mono text-sm"
+                      className="input min-h-[300px] md:min-h-[350px] lg:min-h-[400px] resize-y font-mono text-sm"
                     />
                     
                     {/* スラッシュコマンドメニュー */}
