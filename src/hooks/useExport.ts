@@ -147,197 +147,209 @@ const downloadFile = (content: string | Blob, fileName: string, mimeType: string
   URL.revokeObjectURL(url);
 };
 
-// PDF生成用のHTML作成
-const createPdfHtml = (
+// Markdownからプレーンテキストに変換（PDF用）
+const markdownToPlainText = (markdown: string): string => {
+  let text = markdown;
+
+  // 見出し記号を除去
+  text = text.replace(/^#{1,6}\s+/gm, '');
+
+  // 太字・斜体を除去
+  text = text.replace(/\*\*(.+?)\*\*/g, '$1');
+  text = text.replace(/\*(.+?)\*/g, '$1');
+  text = text.replace(/__(.+?)__/g, '$1');
+  text = text.replace(/_(.+?)_/g, '$1');
+
+  // インラインコードを除去
+  text = text.replace(/`([^`]+)`/g, '$1');
+
+  // リンクをテキストに変換
+  text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1 ($2)');
+
+  // 画像をプレースホルダに
+  text = text.replace(/!\[([^\]]*)\]\([^)]+\)/g, '<<画像>>');
+
+  // リスト記号を整理
+  text = text.replace(/^[-*]\s+/gm, '• ');
+  text = text.replace(/^\d+\.\s+/gm, (match) => match);
+
+  // 引用記号を整理
+  text = text.replace(/^>\s+/gm, '｜ ');
+
+  // コードブロックを整理
+  text = text.replace(/```[\s\S]*?```/g, (match) => {
+    return match.replace(/```\w*\n?/g, '').trim();
+  });
+
+  return text;
+};
+
+// PDF生成（テキスト選択可能）
+const generatePdf = async (
   note: Note,
   options: ExportOptions,
-  context: ExportContext
-): string => {
-  const styles = `
-    <style>
-      body {
-        font-family: "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif;
-        font-size: 12pt;
-        line-height: 1.8;
-        color: #333;
-        max-width: 100%;
-        padding: 20px;
-      }
-      h1 {
-        font-size: 24pt;
-        border-bottom: 2px solid #333;
-        padding-bottom: 10px;
-        margin-bottom: 20px;
-      }
-      .meta {
-        background: #f5f5f5;
-        padding: 15px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-        font-size: 10pt;
-      }
-      .meta p {
-        margin: 5px 0;
-      }
-      .meta strong {
-        color: #555;
-      }
-      .content {
-        white-space: pre-wrap;
-        word-wrap: break-word;
-      }
-      .content h1, .content h2, .content h3, .content h4 {
-        margin-top: 20px;
-        margin-bottom: 10px;
-      }
-      .content h2 { font-size: 18pt; }
-      .content h3 { font-size: 14pt; }
-      .content h4 { font-size: 12pt; }
-      .content ul, .content ol {
-        margin-left: 20px;
-        padding-left: 20px;
-      }
-      .content li {
-        margin: 5px 0;
-      }
-      .content blockquote {
-        border-left: 4px solid #ddd;
-        padding-left: 15px;
-        margin-left: 0;
-        color: #666;
-      }
-      .content code {
-        background: #f0f0f0;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-family: "Courier New", monospace;
-        font-size: 10pt;
-      }
-      .content pre {
-        background: #f5f5f5;
-        padding: 15px;
-        border-radius: 8px;
-        overflow-x: auto;
-      }
-      .content pre code {
-        background: none;
-        padding: 0;
-      }
-      .content img {
-        max-width: 100%;
-        height: auto;
-        border-radius: 8px;
-        margin: 10px 0;
-      }
-      .urls {
-        margin-top: 30px;
-        padding-top: 20px;
-        border-top: 1px solid #ddd;
-      }
-      .urls h2 {
-        font-size: 14pt;
-        margin-bottom: 10px;
-      }
-      .urls ul {
-        list-style: none;
-        padding: 0;
-      }
-      .urls li {
-        margin: 8px 0;
-      }
-      .urls a {
-        color: #0066cc;
-        text-decoration: none;
-      }
-    </style>
-  `;
+  context: ExportContext,
+  fileName: string
+): Promise<void> => {
+  // jsPDFを動的インポート
+  const { default: jsPDF } = await import('jspdf');
 
-  let html = `<!DOCTYPE html><html><head><meta charset="utf-8">${styles}</head><body>`;
+  // Google Fonts から Noto Sans JP を読み込む
+  const fontUrl = 'https://fonts.gstatic.com/s/notosansjp/v53/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFJEk757Y0rw_qMHVdbR2L8Y9QTJ1LwkRmR5GprQAe-T3Ow.ttf';
+  
+  // フォントをフェッチしてBase64に変換
+  const fontResponse = await fetch(fontUrl);
+  const fontArrayBuffer = await fontResponse.arrayBuffer();
+  const fontBase64 = btoa(
+    new Uint8Array(fontArrayBuffer).reduce(
+      (data, byte) => data + String.fromCharCode(byte),
+      ''
+    )
+  );
+
+  // PDF作成
+  const pdf = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  // フォントを追加
+  pdf.addFileToVFS('NotoSansJP-Regular.ttf', fontBase64);
+  pdf.addFont('NotoSansJP-Regular.ttf', 'NotoSansJP', 'normal');
+  pdf.setFont('NotoSansJP');
+
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = 20;
+  const contentWidth = pageWidth - margin * 2;
+  let y = margin;
+
+  // テキストを追加するヘルパー関数
+  const addText = (
+    text: string,
+    fontSize: number,
+    textOptions?: { bold?: boolean; color?: string; maxWidth?: number }
+  ) => {
+    pdf.setFontSize(fontSize);
+    if (textOptions?.color) {
+      const hex = textOptions.color.replace('#', '');
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      pdf.setTextColor(r, g, b);
+    } else {
+      pdf.setTextColor(0, 0, 0);
+    }
+
+    const maxWidth = textOptions?.maxWidth || contentWidth;
+    const lines = pdf.splitTextToSize(text, maxWidth);
+    const lineHeight = fontSize * 0.5;
+
+    for (const line of lines) {
+      // ページを超える場合は改ページ
+      if (y + lineHeight > pageHeight - margin) {
+        pdf.addPage();
+        y = margin;
+      }
+      pdf.text(line, margin, y);
+      y += lineHeight;
+    }
+  };
+
+  // 空行を追加
+  const addSpace = (height: number) => {
+    y += height;
+    if (y > pageHeight - margin) {
+      pdf.addPage();
+      y = margin;
+    }
+  };
+
+  // 区切り線を追加
+  const addLine = () => {
+    if (y + 5 > pageHeight - margin) {
+      pdf.addPage();
+      y = margin;
+    }
+    pdf.setDrawColor(200, 200, 200);
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 5;
+  };
 
   // タイトル
-  html += `<h1>${escapeHtml(note.title)}</h1>`;
+  addText(note.title, 18);
+  addSpace(5);
 
   // メタ情報
   const metaItems: string[] = [];
   if (options.includeCategory && context.categoryPath) {
-    metaItems.push(`<p><strong>カテゴリ:</strong> ${escapeHtml(context.categoryPath)}</p>`);
+    metaItems.push(`カテゴリ: ${context.categoryPath}`);
   }
   if (options.includeTags && context.tagNames.length > 0) {
-    metaItems.push(`<p><strong>タグ:</strong> ${context.tagNames.map(t => `#${escapeHtml(t)}`).join(' ')}</p>`);
+    metaItems.push(`タグ: ${context.tagNames.map(t => `#${t}`).join(' ')}`);
   }
   if (options.includeCreatedAt) {
-    metaItems.push(`<p><strong>作成日:</strong> ${format(note.createdAt, 'yyyy-MM-dd HH:mm')}</p>`);
+    metaItems.push(`作成日: ${format(note.createdAt, 'yyyy-MM-dd HH:mm')}`);
   }
   if (options.includeUpdatedAt) {
-    metaItems.push(`<p><strong>更新日:</strong> ${format(note.updatedAt, 'yyyy-MM-dd HH:mm')}</p>`);
+    metaItems.push(`更新日: ${format(note.updatedAt, 'yyyy-MM-dd HH:mm')}`);
   }
 
   if (metaItems.length > 0) {
-    html += `<div class="meta">${metaItems.join('')}</div>`;
+    pdf.setFillColor(245, 245, 245);
+    const metaHeight = metaItems.length * 6 + 8;
+    
+    if (y + metaHeight > pageHeight - margin) {
+      pdf.addPage();
+      y = margin;
+    }
+    
+    pdf.roundedRect(margin, y - 2, contentWidth, metaHeight, 3, 3, 'F');
+    y += 4;
+    
+    for (const item of metaItems) {
+      addText(item, 9, { color: '#666666' });
+    }
+    addSpace(5);
   }
 
-  // 本文（Markdownをシンプルに変換）
-  html += `<div class="content">${markdownToHtml(note.content)}</div>`;
+  addLine();
+  addSpace(3);
+
+  // 本文
+  const plainContent = markdownToPlainText(note.content);
+  const paragraphs = plainContent.split('\n');
+
+  for (const paragraph of paragraphs) {
+    if (paragraph.trim() === '') {
+      addSpace(3);
+    } else {
+      addText(paragraph, 11);
+    }
+  }
 
   // URL
   if (options.includeUrls && note.urls && note.urls.length > 0) {
-    html += '<div class="urls"><h2>関連URL</h2><ul>';
-    note.urls.forEach((urlInfo) => {
+    addSpace(5);
+    addLine();
+    addSpace(3);
+    
+    addText('関連URL', 12);
+    addSpace(3);
+
+    for (const urlInfo of note.urls) {
       const title = urlInfo.title || urlInfo.url;
-      html += `<li><a href="${escapeHtml(urlInfo.url)}">${escapeHtml(title)}</a></li>`;
-    });
-    html += '</ul></div>';
+      addText(`• ${title}`, 10);
+      if (urlInfo.title) {
+        addText(`  ${urlInfo.url}`, 9, { color: '#0066cc' });
+      }
+      addSpace(2);
+    }
   }
 
-  html += '</body></html>';
-
-  return html;
-};
-
-// HTMLエスケープ
-const escapeHtml = (text: string): string => {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-};
-
-// 簡易Markdown→HTML変換
-const markdownToHtml = (markdown: string): string => {
-  let html = escapeHtml(markdown);
-
-  // 見出し
-  html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
-  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-
-  // 太字・斜体
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-
-  // インラインコード
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  // リンク
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-
-  // 画像（PDFには埋め込み）
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />');
-
-  // リスト
-  html = html.replace(/^[-*] (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.+<\/li>\n?)+/g, '<ul>$&</ul>');
-
-  // 番号付きリスト
-  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-
-  // 引用
-  html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
-
-  // 改行
-  html = html.replace(/\n/g, '<br>');
-
-  return html;
+  // PDFを保存
+  pdf.save(`${fileName}.pdf`);
 };
 
 export const useExport = () => {
@@ -363,61 +375,7 @@ export const useExport = () => {
         }
 
         case 'pdf': {
-          // 動的インポート（jspdfとhtml2canvas）
-          const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-            import('jspdf'),
-            import('html2canvas'),
-          ]);
-
-          // 一時的なHTMLコンテナを作成
-          const container = document.createElement('div');
-          container.innerHTML = createPdfHtml(note, options, context);
-          container.style.position = 'absolute';
-          container.style.left = '-9999px';
-          container.style.width = '210mm'; // A4幅
-          container.style.backgroundColor = 'white';
-          document.body.appendChild(container);
-
-          try {
-            // HTML→Canvas→PDF
-            const canvas = await html2canvas(container, {
-              scale: 2,
-              useCORS: true,
-              allowTaint: true,
-              backgroundColor: '#ffffff',
-            });
-
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF({
-              orientation: 'portrait',
-              unit: 'mm',
-              format: 'a4',
-            });
-
-            const pageWidth = pdf.internal.pageSize.getWidth();
-            const pageHeight = pdf.internal.pageSize.getHeight();
-            const imgWidth = pageWidth;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-            let heightLeft = imgHeight;
-            let position = 0;
-
-            // 最初のページ
-            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-            heightLeft -= pageHeight;
-
-            // 複数ページ対応
-            while (heightLeft > 0) {
-              position = heightLeft - imgHeight;
-              pdf.addPage();
-              pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-              heightLeft -= pageHeight;
-            }
-
-            pdf.save(`${fileName}.pdf`);
-          } finally {
-            document.body.removeChild(container);
-          }
+          await generatePdf(note, options, context, fileName);
           break;
         }
       }
