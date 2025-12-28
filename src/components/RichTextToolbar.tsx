@@ -38,77 +38,89 @@ export const RichTextToolbar = ({
   onChange,
   onImageClick,
 }: ToolbarProps) => {
-  // テキストエリアの選択位置を取得
+  // 選択範囲を取得
   const getSelection = () => {
     const textarea = textareaRef.current;
     if (!textarea) return { start: 0, end: 0, text: '' };
 
-    return {
-      start: textarea.selectionStart,
-      end: textarea.selectionEnd,
-      text: value.substring(textarea.selectionStart, textarea.selectionEnd),
-    };
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = value.substring(start, end);
+
+    return { start, end, text };
   };
 
-  // カーソル位置に挿入
-  const insertAtCursor = (textToInsert: string, cursorOffset = 0) => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const { start, end } = getSelection();
-    const newValue = value.substring(0, start) + textToInsert + value.substring(end);
-    onChange(newValue);
-
-    // カーソル位置を設定
-    setTimeout(() => {
-      textarea.focus();
-      const newPos = start + textToInsert.length + cursorOffset;
-      textarea.setSelectionRange(newPos, newPos);
-    }, 0);
-  };
-
-  // 選択テキストを囲む
+  // テキストを囲む（太字、斜体、コードなど）
   const wrapSelection = (before: string, after: string) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
     const { start, end, text } = getSelection();
+    const newText = text || '選択テキスト';
+    const newValue =
+      value.substring(0, start) +
+      before +
+      newText +
+      after +
+      value.substring(end);
 
-    if (text) {
-      // テキストが選択されている場合
-      const newValue =
-        value.substring(0, start) + before + text + after + value.substring(end);
-      onChange(newValue);
+    onChange(newValue);
 
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(start + before.length, end + before.length);
-      }, 0);
-    } else {
-      // テキストが選択されていない場合、プレースホルダーを挿入
-      const placeholder = 'テキスト';
-      const newValue =
-        value.substring(0, start) + before + placeholder + after + value.substring(end);
-      onChange(newValue);
-
-      setTimeout(() => {
-        textarea.focus();
-        textarea.setSelectionRange(start + before.length, start + before.length + placeholder.length);
-      }, 0);
-    }
+    // カーソル位置を調整
+    setTimeout(() => {
+      textarea.focus();
+      if (text) {
+        textarea.setSelectionRange(
+          start + before.length,
+          end + before.length
+        );
+      } else {
+        textarea.setSelectionRange(
+          start + before.length,
+          start + before.length + newText.length
+        );
+      }
+    }, 0);
   };
 
-  // 行頭にプレフィックスを追加
+  // カーソル位置に挿入
+  const insertAtCursor = (insert: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const { start, end } = getSelection();
+    const newValue =
+      value.substring(0, start) + insert + value.substring(end);
+
+    onChange(newValue);
+
+    setTimeout(() => {
+      textarea.focus();
+      const newPos = start + insert.length;
+      textarea.setSelectionRange(newPos, newPos);
+    }, 0);
+  };
+
+  // 行頭にプレフィックスを追加（見出し、リストなど）
   const addPrefix = (prefix: string) => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
     const { start } = getSelection();
 
-    // 現在の行の先頭を見つける
-    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
-    const lineEnd = value.indexOf('\n', start);
-    const actualLineEnd = lineEnd === -1 ? value.length : lineEnd;
+    // 現在の行の開始位置を探す
+    let lineStart = start;
+    while (lineStart > 0 && value[lineStart - 1] !== '\n') {
+      lineStart--;
+    }
+
+    // 行末を探す
+    let lineEnd = start;
+    while (lineEnd < value.length && value[lineEnd] !== '\n') {
+      lineEnd++;
+    }
+
+    const actualLineEnd = lineEnd < value.length ? lineEnd : value.length;
 
     // 現在の行を取得
     const currentLine = value.substring(lineStart, actualLineEnd);
