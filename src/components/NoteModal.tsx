@@ -42,8 +42,19 @@ export const NoteModal = () => {
   const [showTagSuggestions, setShowTagSuggestions] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
   const [tempNoteId, setTempNoteId] = useState<string>('');
+  const [isMobile, setIsMobile] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // モバイル判定
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   // 新規作成時の一時ID生成
   useEffect(() => {
@@ -60,10 +71,8 @@ export const NoteModal = () => {
 
     try {
       const imageUrl = await uploadImage(file, tempNoteId);
-      // Markdown形式で画像を挿入
       const imageMarkdown = `![](${imageUrl})`;
       
-      // カーソル位置に挿入
       if (textareaRef.current) {
         const { selectionStart, selectionEnd } = textareaRef.current;
         const newContent = 
@@ -72,7 +81,6 @@ export const NoteModal = () => {
           formData.content.substring(selectionEnd);
         setFormData({ ...formData, content: newContent });
         
-        // カーソル位置を更新
         setTimeout(() => {
           if (textareaRef.current) {
             const newPosition = selectionStart + imageMarkdown.length;
@@ -89,17 +97,14 @@ export const NoteModal = () => {
     }
   };
 
-  // ファイル選択ハンドラ
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       handleImageUpload(file);
     }
-    // inputをリセット（同じファイルを再選択可能に）
     e.target.value = '';
   };
 
-  // ペーストハンドラ（クリップボードから画像）
   const handlePaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -116,17 +121,14 @@ export const NoteModal = () => {
     }
   };
 
-  // タグの色候補
   const tagColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
 
-  // 入力に基づいてフィルタされたタグ候補
   const filteredTags = tags.filter(
     (tag) =>
       tag.name.toLowerCase().includes(tagInput.toLowerCase()) &&
       !formData.tags.includes(tag.id)
   );
 
-  // タグを追加（既存または新規）
   const handleAddTag = async () => {
     if (!tagInput.trim()) return;
 
@@ -150,7 +152,6 @@ export const NoteModal = () => {
     setShowTagSuggestions(false);
   };
 
-  // 編集時に既存データを読み込む
   useEffect(() => {
     if (modal.mode === 'edit' && modal.noteId) {
       const note = notes.find((n) => n.id === modal.noteId);
@@ -180,12 +181,10 @@ export const NoteModal = () => {
     setShowPreview(false);
   }, [modal.isOpen, modal.mode, modal.noteId, notes]);
 
-  // メインカテゴリ取得
   const mainCategories = categories.filter((c) => c.type === 'main');
   const getSubCategories = (parentId: string) =>
     categories.filter((c) => c.type === 'sub' && c.parentId === parentId);
 
-  // カテゴリ表示名を取得
   const getCategoryDisplayName = (categoryId: string) => {
     if (!categoryId) return 'カテゴリを選択';
     const category = categories.find((c) => c.id === categoryId);
@@ -198,27 +197,23 @@ export const NoteModal = () => {
     return category.name;
   };
 
-  // URL追加
   const addUrlField = () => {
     if (formData.urls.length < 5) {
       setFormData({ ...formData, urls: [...formData.urls, { title: '', url: '' }] });
     }
   };
 
-  // URL削除
   const removeUrlField = (index: number) => {
     const newUrls = formData.urls.filter((_, i) => i !== index);
     setFormData({ ...formData, urls: newUrls.length > 0 ? newUrls : [{ title: '', url: '' }] });
   };
 
-  // URL更新
   const updateUrl = (index: number, field: 'title' | 'url', value: string) => {
     const newUrls = [...formData.urls];
     newUrls[index] = { ...newUrls[index], [field]: value };
     setFormData({ ...formData, urls: newUrls });
   };
 
-  // バリデーション
   const validate = () => {
     const newErrors: Record<string, string> = {};
 
@@ -230,7 +225,6 @@ export const NoteModal = () => {
       newErrors.categoryId = 'カテゴリを選択してください';
     }
 
-    // URL検証（URLが入力されているもののみ）
     const nonEmptyUrls = formData.urls.filter(u => u.url.trim());
     for (let i = 0; i < nonEmptyUrls.length; i++) {
       if (!isValidUrl(nonEmptyUrls[i].url)) {
@@ -252,7 +246,6 @@ export const NoteModal = () => {
     }
   };
 
-  // 保存
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -261,7 +254,6 @@ export const NoteModal = () => {
     setIsSubmitting(true);
 
     try {
-      // 空でないURLのみフィルタ
       const validUrls = formData.urls
         .filter(u => u.url.trim())
         .map(u => ({ title: u.title.trim(), url: u.url.trim() }));
@@ -293,6 +285,12 @@ export const NoteModal = () => {
 
   if (!modal.isOpen) return null;
 
+  // モバイル用スタイル
+  const inputStyle = isMobile ? { padding: '14px 16px', fontSize: '16px' } : {};
+  const textareaStyle = isMobile 
+    ? { minHeight: '280px', padding: '14px 48px 14px 16px', fontSize: '16px' } 
+    : { minHeight: '160px' };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* オーバーレイ */}
@@ -310,7 +308,6 @@ export const NoteModal = () => {
               {modal.mode === 'edit' ? 'メモを編集' : '新規メモ'}
             </h2>
             <div className="flex items-center gap-2">
-              {/* お気に入り */}
               <button
                 type="button"
                 onClick={() => setFormData({ ...formData, isFavorite: !formData.isFavorite })}
@@ -345,14 +342,15 @@ export const NoteModal = () => {
                 value={formData.title}
                 onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                 placeholder="メモのタイトル"
-                className={`input py-3 md:py-2.5 text-base md:text-sm ${errors.title ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`}
+                style={inputStyle}
+                className={`input ${errors.title ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}`}
               />
               {errors.title && (
                 <p className="mt-1 text-sm text-red-500">{errors.title}</p>
               )}
             </div>
 
-            {/* メモ（大きく表示・プレビュー付き） */}
+            {/* メモ */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-700">
@@ -386,7 +384,10 @@ export const NoteModal = () => {
                 </div>
               </div>
               {showPreview ? (
-                <div className="min-h-[200px] md:min-h-[160px] p-4 border border-gray-200 rounded-lg bg-white prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
+                <div 
+                  className="p-4 border border-gray-200 rounded-lg bg-white prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1"
+                  style={{ minHeight: isMobile ? '280px' : '160px' }}
+                >
                   {formData.content ? (
                     <ReactMarkdown 
                       remarkPlugins={[remarkGfm]}
@@ -421,11 +422,10 @@ export const NoteModal = () => {
                       onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                       onPaste={handlePaste}
                       placeholder="メモの内容...&#10;&#10;Markdown記法が使えます:&#10;**太字** / *斜体*&#10;- リスト&#10;1. 番号リスト&#10;> 引用&#10;`コード`&#10;&#10;画像: Ctrl+V でペースト可能"
-                      rows={8}
-                      className="input resize-none font-mono text-base md:text-sm pr-12 min-h-[240px] md:min-h-[160px] py-3 md:py-2.5"
+                      style={textareaStyle}
+                      className="input resize-none font-mono text-sm pr-12"
                       disabled={isUploading}
                     />
-                    {/* 画像アップロードボタン */}
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
@@ -471,7 +471,7 @@ export const NoteModal = () => {
               )}
             </div>
 
-            {/* URL（複数対応・タイトル付き） */}
+            {/* URL */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-700">
@@ -498,7 +498,8 @@ export const NoteModal = () => {
                           value={urlInfo.title}
                           onChange={(e) => updateUrl(index, 'title', e.target.value)}
                           placeholder="リンクのタイトル（任意）"
-                          className="input py-3 md:py-2 text-base md:text-sm"
+                          style={inputStyle}
+                          className="input text-sm"
                         />
                       </div>
                       {formData.urls.length > 1 && (
@@ -518,7 +519,8 @@ export const NoteModal = () => {
                         value={urlInfo.url}
                         onChange={(e) => updateUrl(index, 'url', e.target.value)}
                         placeholder="https://example.com"
-                        className={`input pl-10 py-3 md:py-2 text-base md:text-sm ${errors.urls ? 'border-red-500' : ''}`}
+                        style={inputStyle}
+                        className={`input pl-10 text-sm ${errors.urls ? 'border-red-500' : ''}`}
                       />
                     </div>
                   </div>
@@ -535,7 +537,6 @@ export const NoteModal = () => {
                 タグ
               </label>
               
-              {/* タグ入力欄 */}
               <div className="relative">
                 <input
                   type="text"
@@ -552,10 +553,10 @@ export const NoteModal = () => {
                     }
                   }}
                   placeholder="タグを入力（Enterで追加）"
-                  className="input py-3 md:py-2.5 text-base md:text-sm"
+                  style={inputStyle}
+                  className="input"
                 />
                 
-                {/* サジェストドロップダウン */}
                 {showTagSuggestions && tagInput && filteredTags.length > 0 && (
                   <>
                     <div
@@ -588,14 +589,12 @@ export const NoteModal = () => {
                 )}
               </div>
 
-              {/* 新規タグ作成のヒント */}
               {tagInput && !filteredTags.find(t => t.name.toLowerCase() === tagInput.toLowerCase()) && (
                 <p className="mt-1 text-xs text-gray-500">
                   Enterで「{tagInput}」を新規タグとして作成
                 </p>
               )}
 
-              {/* 選択済みタグ */}
               {formData.tags.length > 0 && (
                 <div className="flex flex-wrap gap-2 mt-3">
                   {formData.tags.map((tagId) => {
@@ -632,7 +631,6 @@ export const NoteModal = () => {
 
             {/* カテゴリ・重要度 */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* カテゴリ */}
               <div className="relative">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   カテゴリ <span className="text-red-500">*</span>
@@ -640,7 +638,8 @@ export const NoteModal = () => {
                 <button
                   type="button"
                   onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                  className={`input py-3 md:py-2.5 text-base md:text-sm text-left flex items-center justify-between ${
+                  style={inputStyle}
+                  className={`input text-left flex items-center justify-between ${
                     errors.categoryId ? 'border-red-500' : ''
                   }`}
                 >
@@ -700,7 +699,6 @@ export const NoteModal = () => {
                 )}
               </div>
 
-              {/* 重要度 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   重要度
@@ -715,7 +713,8 @@ export const NoteModal = () => {
                       key={option.value}
                       type="button"
                       onClick={() => setFormData({ ...formData, priority: option.value as 1 | 2 | 3 })}
-                      className={`flex-1 py-3 md:py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
+                      style={isMobile ? { padding: '12px' } : {}}
+                      className={`flex-1 py-2 px-3 rounded-lg border text-sm font-medium transition-all ${
                         formData.priority === option.value
                           ? option.className + ' border-2'
                           : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300'
@@ -728,7 +727,6 @@ export const NoteModal = () => {
               </div>
             </div>
 
-            {/* エラーメッセージ */}
             {errors.submit && (
               <div className="flex items-center gap-2 p-4 bg-red-50 rounded-lg text-red-600">
                 <AlertCircle className="w-5 h-5" />
@@ -742,14 +740,16 @@ export const NoteModal = () => {
             <button
               type="button"
               onClick={closeModal}
-              className="btn btn-secondary py-3 md:py-2"
+              style={isMobile ? { padding: '12px 20px' } : {}}
+              className="btn btn-secondary"
             >
               キャンセル
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="btn btn-primary py-3 md:py-2"
+              style={isMobile ? { padding: '12px 20px' } : {}}
+              className="btn btn-primary"
             >
               {isSubmitting ? (
                 <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
