@@ -50,36 +50,6 @@
     @apply focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500;
     @apply transition-all duration-200;
   }
-
-  /* モバイル向け入力欄サイズ調整（1.5倍） */
-  @media (max-width: 768px) {
-    .input {
-      @apply py-4 text-base;
-      min-height: 3rem; /* 通常の約1.5倍 */
-    }
-
-    /* テキストエリアも同様に調整 */
-    textarea.input,
-    .textarea-mobile {
-      min-height: 180px; /* 通常の120pxの1.5倍 */
-    }
-
-    /* モーダル内の入力欄 */
-    .modal-input {
-      @apply py-4 text-base;
-    }
-
-    /* ボタンもタップしやすいサイズに */
-    .btn {
-      @apply py-3 text-base;
-      min-height: 3rem;
-    }
-
-    /* 検索バー */
-    .search-input {
-      @apply py-4 text-base;
-    }
-  }
   
   .badge {
     @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
@@ -141,14 +111,6 @@
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: #9ca3af;
   }
-
-  /* モバイルでのタッチ操作最適化 */
-  @media (max-width: 768px) {
-    .touch-target {
-      min-height: 44px;
-      min-width: 44px;
-    }
-  }
 }
 
 /* Animations */
@@ -205,6 +167,50 @@
   margin-bottom: 0.25rem;
 }
 
+/* Task list (checkbox) styles - チェックリストの黒丸を非表示 */
+.prose ul.contains-task-list {
+  list-style-type: none;
+  padding-left: 0;
+}
+
+.prose .task-list-item {
+  list-style-type: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding-left: 0;
+}
+
+.prose .task-list-item::before {
+  content: none;
+}
+
+.prose .task-list-item::marker {
+  content: none;
+}
+
+.prose .task-list-item input[type="checkbox"] {
+  margin-top: 0.3rem;
+  margin-right: 0.25rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* GFM task list item - react-markdown用 */
+.prose li:has(> input[type="checkbox"]) {
+  list-style-type: none;
+  margin-left: -1.25rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+.prose li > input[type="checkbox"] {
+  margin-top: 0.3rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 .prose blockquote {
   border-left: 4px solid #d1d5db;
   padding-left: 1rem;
@@ -250,17 +256,4 @@
 
 .prose a:hover {
   color: #0369a1;
-}
-
-/* PWA Install Banner */
-.pwa-install-banner {
-  @apply fixed bottom-0 left-0 right-0 z-50;
-  padding-bottom: env(safe-area-inset-bottom, 0);
-}
-
-/* Safe area padding for iOS */
-@supports (padding: max(0px)) {
-  .safe-area-bottom {
-    padding-bottom: max(1rem, env(safe-area-inset-bottom));
-  }
 }

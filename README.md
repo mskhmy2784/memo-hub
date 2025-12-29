@@ -1,136 +1,75 @@
-# MemoHub - メモ管理Webツール
+# NoteDetailPage Word出力機能追加
 
-URLとメモを一元管理できるWebアプリケーションです。
+## 概要
+NoteDetailPage（メモ詳細ページ）にエクスポート機能を追加しました。
+既存のテキスト/Markdown/PDF形式に加え、Word (.docx) 形式でのエクスポートに対応しています。
 
-## 機能
+## 変更ファイル
 
-- 🔐 **Google認証**: 安全なログイン
-- 📁 **カテゴリ管理**: 仕事/プライベートのメインカテゴリ + サブカテゴリ
-- 🏷️ **タグ付け**: 自由なタグで分類
-- ⭐ **お気に入り**: よく使うメモに即アクセス
-- 🔍 **検索・フィルタ**: タイトル、メモ、URLで検索
-- 📤 **エクスポート**: JSON形式でダウンロード
-- 📱 **レスポンシブ**: PC/タブレット/スマホ対応
+### 1. src/pages/NoteDetailPage.tsx
+**新規追加された機能：**
+- 3点メニュー（MoreVertical）からアクセスできるエクスポートメニュー
+- サブメニュー形式で以下の形式に対応：
+  - テキスト (.txt)
+  - Markdown (.md)
+  - PDF (.pdf) - ブラウザ印刷機能を使用
+  - Word (.docx) - docxライブラリを使用
 
-## セットアップ
-
-### 1. Firebaseプロジェクトの作成
-
-1. [Firebase Console](https://console.firebase.google.com/) にアクセス
-2. 「プロジェクトを追加」をクリック
-3. プロジェクト名を入力して作成
-
-### 2. Firebase Authenticationの設定
-
-1. 左メニューから「Authentication」を選択
-2. 「始める」をクリック
-3. 「Sign-in method」タブで「Google」を有効化
-4. プロジェクトのサポートメールを設定して保存
-
-### 3. Cloud Firestoreの設定
-
-1. 左メニューから「Firestore Database」を選択
-2. 「データベースを作成」をクリック
-3. 「本番モード」を選択（後でルールを設定）
-4. リージョンを選択（asia-northeast1 推奨）
-
-### 4. Firestoreセキュリティルールの設定
-
-Firestoreの「ルール」タブで以下を設定:
-
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    // ユーザーは自分のデータのみアクセス可能
-    match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-    }
-  }
-}
+**インポート追加：**
+```typescript
+import { MoreVertical, Download, FileText, FileCode, FileType, ChevronRight } from 'lucide-react';
+import { exportSingleNoteToWord } from '../utils/exportToWord';
 ```
 
-### 5. Webアプリの登録
+**状態追加：**
+```typescript
+const [showMenu, setShowMenu] = useState(false);
+const [showExportMenu, setShowExportMenu] = useState(false);
+```
 
-1. プロジェクト設定（⚙️アイコン）を開く
-2. 「全般」タブの「マイアプリ」セクションで「</>」をクリック
-3. アプリのニックネームを入力して登録
-4. 表示されるFirebase設定をコピー
+**エクスポート関数：**
+- `handleExportText()` - テキスト形式でダウンロード
+- `handleExportMarkdown()` - Markdown形式でダウンロード
+- `handleExportPDF()` - 新しいウィンドウで印刷ダイアログを表示
+- `handleExportWord()` - Word形式でダウンロード
 
-### 6. 環境変数の設定
+### 2. src/utils/exportToWord.ts
+**新規追加された関数：**
+```typescript
+export const exportSingleNoteToWord = async (note: {...}): Promise<void>
+```
+- NoteDetailPage用の単一メモWord出力関数
+- 既存の`exportToWord`関数を内部で使用
+- タイトル、カテゴリパス、タグ、重要度、お気に入り、日時、URL、本文を含む
+
+## UI仕様
+1. ヘッダー右側に3点メニューボタン（MoreVertical）を配置
+2. クリックでドロップダウンメニューを表示
+3. 「エクスポート」をホバー/クリックでサブメニュー展開
+4. 各エクスポート形式をクリックでダウンロード開始
+
+## インストール
+
+Word出力機能を使用するために、docxパッケージをインストールしてください：
 
 ```bash
-cp .env.example .env
+npm install docx file-saver
+npm install -D @types/file-saver
 ```
 
-`.env` ファイルにFirebaseの設定値を入力:
+## 適用手順
 
-```
-VITE_FIREBASE_API_KEY=AIza...
-VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
-VITE_FIREBASE_APP_ID=1:123456789:web:abcdef
-```
+1. `src/pages/NoteDetailPage.tsx` を上書きコピー
+2. `src/utils/exportToWord.ts` を上書きコピー
+3. 依存パッケージをインストール（まだの場合）
+4. ビルド確認: `npm run build`
+5. デプロイ: `firebase deploy --only hosting`
 
-### 7. 開発サーバーの起動
+## テスト方法
 
-```bash
-npm install
-npm run dev
-```
-
-## デプロイ (Firebase Hosting)
-
-### 1. Firebase CLIのインストール
-
-```bash
-npm install -g firebase-tools
-firebase login
-```
-
-### 2. Firebase初期化
-
-```bash
-firebase init hosting
-```
-
-- 「Use an existing project」を選択
-- public directory: `dist`
-- Single-page app: `Yes`
-- GitHub deploys: お好みで
-
-### 3. ビルド & デプロイ
-
-```bash
-npm run build
-firebase deploy --only hosting
-```
-
-## 技術スタック
-
-- **フロントエンド**: React 18 + TypeScript + Vite
-- **スタイリング**: Tailwind CSS
-- **状態管理**: Zustand
-- **バックエンド**: Firebase (Auth + Firestore)
-- **ホスティング**: Firebase Hosting
-
-## ディレクトリ構成
-
-```
-src/
-├── components/     # UIコンポーネント
-├── hooks/          # カスタムフック
-├── lib/            # ライブラリ設定
-├── pages/          # ページコンポーネント
-├── stores/         # Zustand ストア
-├── types/          # TypeScript 型定義
-├── App.tsx
-├── main.tsx
-└── index.css
-```
-
-## ライセンス
-
-MIT
+1. アプリを起動
+2. 任意のメモの詳細ページを開く
+3. 右上の3点メニュー（⋮）をクリック
+4. 「エクスポート」にカーソルを合わせる
+5. 各形式（テキスト/Markdown/PDF/Word）をクリック
+6. ファイルがダウンロードされることを確認

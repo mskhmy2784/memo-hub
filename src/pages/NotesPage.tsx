@@ -24,9 +24,11 @@ import {
   ArrowLeft,
   GripVertical,
   Pin,
-  Archive,
+  FileJson,
+  FileType,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
+import { ja } from 'date-fns/locale';
 import {
   DndContext,
   closestCenter,
@@ -44,6 +46,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { exportToWord } from '../utils/exportToWord';
 
 export const NotesPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -59,74 +62,54 @@ export const NotesPage = () => {
     setFilter,
     setSort,
     openModal,
-    openDeleteDialog,
     toggleSelectNote,
     clearSelection,
     isLoading,
   } = useNotesStore();
-  const { updateNote, reorderNotes } = useFirestore();
+  const { deleteNotes, updateNote, reorderNotes } = useFirestore();
 
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
+  const [showExportMenu, setShowExportMenu] = useState(false);
 
   // URLパラメータからフィルタを設定
   useEffect(() => {
     const category = searchParams.get('category');
-    const favorites = searchParams.get('favorite');
-    const priority = searchParams.get('priority');
-
-    if (category === 'work') {
-      const workCategory = categories.find((c) => c.name === '仕事' && c.type === 'main');
-      if (workCategory) setFilter({ categoryId: workCategory.id });
-    } else if (category === 'private') {
-      const privateCategory = categories.find((c) => c.name === 'プライベート' && c.type === 'main');
-      if (privateCategory) setFilter({ categoryId: privateCategory.id });
-    } else if (category === 'common') {
-      const commonCategory = categories.find((c) => c.name === '共通' && c.type === 'main');
-      if (commonCategory) setFilter({ categoryId: commonCategory.id });
-    }
-
-    if (favorites === 'true') {
-      setFilter({ showFavoritesOnly: true });
-    }
-
-    if (priority) {
-      setFilter({ priority: parseInt(priority) });
+    if (category) {
+      if (category === 'work' || category === 'private' || category === 'common') {
+        const mainCategory = categories.find(
+          (c) =>
+            c.type === 'main' &&
+            ((category === 'work' && c.name === '仕事') ||
+              (category === 'private' && c.name === 'プライベート') ||
+              (category === 'common' && c.name === '共通'))
+        );
+        if (mainCategory) {
+          setFilter({ categoryId: mainCategory.id });
+        }
+      } else {
+        setFilter({ categoryId: category });
+      }
     }
   }, [searchParams, categories, setFilter]);
 
-  // メインカテゴリを取得
-  const mainCategories = useMemo(
-    () => categories.filter((c) => c.type === 'main'),
-    [categories]
-  );
-
-  // サブカテゴリを取得
-  const getSubCategories = (parentId: string) =>
-    categories.filter((c) => c.type === 'sub' && c.parentId === parentId);
-
-  // アーカイブされたメモの件数
-  const archivedCount = useMemo(
-    () => notes.filter((n) => n.isArchived).length,
-    [notes]
-  );
-
-  // フィルタリングされたメモ（アーカイブを除外）
+  // フィルタ適用済みメモ
   const filteredNotes = useMemo(() => {
-    // アーカイブされていないメモのみ対象
-    let result = [...notes].filter((n) => !n.isArchived);
+    let result = [...notes];
 
     // 検索フィルタ
     if (filter.search) {
-      const query = filter.search.toLowerCase();
+      const searchLower = filter.search.toLowerCase();
       result = result.filter(
         (n) =>
-          n.title.toLowerCase().includes(query) ||
-          n.content.toLowerCase().includes(query) ||
-          (n.urls && n.urls.some(u => 
-            u.url.toLowerCase().includes(query) || 
-            u.title.toLowerCase().includes(query)
-          ))
+          n.title.toLowerCase().includes(searchLower) ||
+          n.content.toLowerCase().includes(searchLower) ||
+          (n.urls &&
+            n.urls.some(
+              (u) =>
+                u.url.toLowerCase().includes(searchLower) ||
+                u.title.toLowerCase().includes(searchLower)
+            ))
       );
     }
 
@@ -179,8 +162,9 @@ export const NotesPage = () => {
           comparison = a.createdAt.getTime() - b.createdAt.getTime();
           break;
         case 'order':
+          // カスタム順は常に昇順（ダッシュボードと一致）
           comparison = a.order - b.order;
-          break;
+          return comparison; // sort.orderを無視して常に昇順
         case 'updatedAt':
         default:
           comparison = a.updatedAt.getTime() - b.updatedAt.getTime();
@@ -219,19 +203,22 @@ export const NotesPage = () => {
     return null;
   };
 
-  // 一括削除（削除確認ダイアログを開く）
-  const handleBulkDelete = () => {
+  // 一括削除
+  const handleBulkDelete = async () => {
     if (selectedNoteIds.length === 0) return;
-    openDeleteDialog(selectedNoteIds, 'bulk');
+    if (!confirm(`${selectedNoteIds.length}件のメモを削除しますか？`)) return;
+
+    await deleteNotes(selectedNoteIds);
+    clearSelection();
   };
 
-  // エクスポート
-  const handleExport = () => {
+  // 共通のエクスポートデータ生成
+  const getExportData = () => {
     const notesToExport = filteredNotes.filter((n) =>
       selectedNoteIds.length > 0 ? selectedNoteIds.includes(n.id) : true
     );
 
-    const data = notesToExport.map((n) => ({
+    return notesToExport.map((n) => ({
       title: n.title,
       content: n.content,
       urls: n.urls,
@@ -245,7 +232,11 @@ export const NotesPage = () => {
       createdAt: format(n.createdAt, 'yyyy-MM-dd HH:mm'),
       updatedAt: format(n.updatedAt, 'yyyy-MM-dd HH:mm'),
     }));
+  };
 
+  // JSONエクスポート
+  const handleExportJSON = () => {
+    const data = getExportData();
     const blob = new Blob([JSON.stringify(data, null, 2)], {
       type: 'application/json',
     });
@@ -254,6 +245,15 @@ export const NotesPage = () => {
     a.href = url;
     a.download = `notes-${format(new Date(), 'yyyyMMdd')}.json`;
     a.click();
+    URL.revokeObjectURL(url);
+    setShowExportMenu(false);
+  };
+
+  // Wordエクスポート
+  const handleExportWord = async () => {
+    const data = getExportData();
+    await exportToWord(data);
+    setShowExportMenu(false);
   };
 
   // お気に入り切り替え
@@ -292,13 +292,38 @@ export const NotesPage = () => {
 
       const newOrder = arrayMove(filteredNotes, oldIndex, newIndex);
       const noteIds = newOrder.map((n) => n.id);
-      
+
       await reorderNotes(noteIds);
     }
   };
 
   // カスタム順かどうか
   const isCustomOrder = sort.field === 'order';
+
+  // メインカテゴリ
+  const mainCategories = categories.filter((c) => c.type === 'main');
+
+  // サブカテゴリを取得
+  const getSubCategories = (parentId: string) => {
+    return categories.filter((c) => c.type === 'sub' && c.parentId === parentId);
+  };
+
+  // カテゴリ展開トグル
+  const toggleCategory = (categoryId: string) => {
+    setExpandedCategories((prev) =>
+      prev.includes(categoryId)
+        ? prev.filter((id) => id !== categoryId)
+        : [...prev, categoryId]
+    );
+  };
+
+  // 現在のカテゴリ情報
+  const currentCategory = filter.categoryId
+    ? categories.find((c) => c.id === filter.categoryId)
+    : null;
+  const currentCategoryType = currentCategory
+    ? getCategoryType(currentCategory.id)
+    : null;
 
   if (isLoading) {
     return (
@@ -317,168 +342,145 @@ export const NotesPage = () => {
             <div className="flex items-center gap-4">
               <Link
                 to="/"
-                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
               >
                 <ArrowLeft className="w-5 h-5" />
-                <span className="hidden sm:inline">ダッシュボード</span>
               </Link>
-              <div className="h-6 w-px bg-gray-200" />
-              <h1 className="text-xl font-semibold text-gray-900">すべてのメモ</h1>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">
+                  {currentCategory ? (
+                    <span className="flex items-center gap-2">
+                      {currentCategoryType === 'work' && (
+                        <Briefcase className="w-5 h-5 text-blue-600" />
+                      )}
+                      {currentCategoryType === 'private' && (
+                        <HomeIcon className="w-5 h-5 text-pink-600" />
+                      )}
+                      {currentCategoryType === 'common' && (
+                        <Pin className="w-5 h-5 text-green-600" />
+                      )}
+                      {currentCategory.name}
+                    </span>
+                  ) : (
+                    'すべてのメモ'
+                  )}
+                </h1>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* アーカイブへのリンク */}
-              <Link
-                to="/archive"
-                className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors"
-              >
-                <Archive className="w-4 h-4" />
-                <span className="hidden sm:inline">アーカイブ</span>
-                {archivedCount > 0 && (
-                  <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full">
-                    {archivedCount}
-                  </span>
-                )}
-              </Link>
-
-              <button
-                onClick={() => openModal('create')}
-                className="btn btn-primary"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">新規追加</span>
-              </button>
-            </div>
+            <button
+              onClick={() => openModal('create')}
+              className="btn btn-primary"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">新規メモ</span>
+            </button>
           </div>
         </div>
       </header>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         <div className="flex gap-6">
-          {/* サイドバー */}
-          <aside className="hidden lg:block w-64 flex-shrink-0">
-            <div className="card p-4 sticky top-24">
-              <h2 className="font-medium text-gray-900 mb-4">カテゴリ</h2>
-              <nav className="space-y-1">
-                <button
-                  onClick={() => {
-                    setFilter({ categoryId: null });
-                    setSearchParams({});
-                  }}
-                  className={`w-full sidebar-item ${
-                    !filter.categoryId ? 'active' : ''
-                  }`}
-                >
-                  <FileText className="w-4 h-4" />
-                  すべて
-                  <span className="ml-auto text-sm text-gray-400">
-                    {notes.filter(n => !n.isArchived).length}
-                  </span>
-                </button>
+          {/* サイドバー（カテゴリ） */}
+          <aside className="hidden lg:block w-56 flex-shrink-0">
+            <nav className="space-y-1">
+              <button
+                onClick={() => {
+                  setFilter({ categoryId: null });
+                  setSearchParams({});
+                }}
+                className={`sidebar-item w-full ${
+                  !filter.categoryId ? 'active' : ''
+                }`}
+              >
+                <FileText className="w-5 h-5" />
+                すべてのメモ
+              </button>
 
-                {mainCategories.map((category) => {
-                  const subCategories = getSubCategories(category.id);
-                  const isExpanded = expandedCategories.includes(category.id);
-                  const count = notes.filter(
-                    (n) =>
-                      !n.isArchived && (
-                        n.categoryId === category.id ||
-                        subCategories.some((sc) => sc.id === n.categoryId)
-                      )
-                  ).length;
+              {mainCategories.map((mainCat) => {
+                const subCategories = getSubCategories(mainCat.id);
+                const isExpanded = expandedCategories.includes(mainCat.id);
+                const isSelected = filter.categoryId === mainCat.id;
+                const Icon =
+                  mainCat.name === '仕事'
+                    ? Briefcase
+                    : mainCat.name === '共通'
+                    ? Pin
+                    : HomeIcon;
+                const iconColor =
+                  mainCat.name === '仕事'
+                    ? 'text-blue-600'
+                    : mainCat.name === '共通'
+                    ? 'text-green-600'
+                    : 'text-pink-600';
 
-                  const getCategoryIcon = () => {
-                    switch (category.name) {
-                      case '仕事':
-                        return <Briefcase className="w-4 h-4 text-blue-500" />;
-                      case 'プライベート':
-                        return <HomeIcon className="w-4 h-4 text-pink-500" />;
-                      case '共通':
-                        return <Pin className="w-4 h-4 text-green-500" />;
-                      default:
-                        return <span>{category.icon}</span>;
-                    }
-                  };
-
-                  return (
-                    <div key={category.id}>
-                      <div className="flex items-center">
-                        {subCategories.length > 0 && (
-                          <button
-                            onClick={() =>
-                              setExpandedCategories((prev) =>
-                                isExpanded
-                                  ? prev.filter((id) => id !== category.id)
-                                  : [...prev, category.id]
-                              )
-                            }
-                            className="p-1 hover:bg-gray-100 rounded"
-                          >
-                            {isExpanded ? (
-                              <ChevronDown className="w-4 h-4 text-gray-400" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4 text-gray-400" />
-                            )}
-                          </button>
-                        )}
+                return (
+                  <div key={mainCat.id}>
+                    <div className="flex items-center">
+                      {subCategories.length > 0 && (
                         <button
-                          onClick={() => setFilter({ categoryId: category.id })}
-                          className={`flex-1 sidebar-item ${
-                            filter.categoryId === category.id ? 'active' : ''
-                          }`}
+                          onClick={() => toggleCategory(mainCat.id)}
+                          className="p-1 hover:bg-gray-100 rounded"
                         >
-                          {getCategoryIcon()}
-                          {category.name}
-                          <span className="ml-auto text-sm text-gray-400">
-                            {count}
-                          </span>
+                          <ChevronRight
+                            className={`w-4 h-4 transition-transform ${
+                              isExpanded ? 'rotate-90' : ''
+                            }`}
+                          />
                         </button>
-                      </div>
-
-                      {isExpanded && subCategories.length > 0 && (
-                        <div className="ml-6 mt-1 space-y-1">
-                          {subCategories.map((sub) => {
-                            const subCount = notes.filter(
-                              (n) => !n.isArchived && n.categoryId === sub.id
-                            ).length;
-                            return (
-                              <button
-                                key={sub.id}
-                                onClick={() => setFilter({ categoryId: sub.id })}
-                                className={`w-full sidebar-item text-sm ${
-                                  filter.categoryId === sub.id ? 'active' : ''
-                                }`}
-                              >
-                                {sub.name}
-                                <span className="ml-auto text-xs text-gray-400">
-                                  {subCount}
-                                </span>
-                              </button>
-                            );
-                          })}
-                        </div>
                       )}
+                      <button
+                        onClick={() => {
+                          setFilter({ categoryId: mainCat.id });
+                          setSearchParams({ category: mainCat.id });
+                        }}
+                        className={`sidebar-item flex-1 ${
+                          isSelected ? 'active' : ''
+                        }`}
+                      >
+                        <Icon className={`w-5 h-5 ${iconColor}`} />
+                        {mainCat.name}
+                      </button>
                     </div>
-                  );
-                })}
-              </nav>
-            </div>
+
+                    {isExpanded && subCategories.length > 0 && (
+                      <div className="ml-6 space-y-1 mt-1">
+                        {subCategories.map((subCat) => (
+                          <button
+                            key={subCat.id}
+                            onClick={() => {
+                              setFilter({ categoryId: subCat.id });
+                              setSearchParams({ category: subCat.id });
+                            }}
+                            className={`sidebar-item w-full text-sm ${
+                              filter.categoryId === subCat.id ? 'active' : ''
+                            }`}
+                          >
+                            {subCat.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </nav>
           </aside>
 
           {/* メインコンテンツ */}
           <main className="flex-1 min-w-0">
-            {/* 検索・フィルタバー */}
-            <div className="card p-4 mb-4">
-              <div className="flex flex-col sm:flex-row gap-4">
+            {/* 検索・フィルタ */}
+            <div className="card p-4 mb-6">
+              <div className="flex flex-wrap items-center gap-4">
                 {/* 検索 */}
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <div className="flex-1 min-w-[200px] relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="タイトル、メモ、URLで検索..."
+                    placeholder="メモを検索..."
                     value={filter.search}
                     onChange={(e) => setFilter({ search: e.target.value })}
-                    className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500"
+                    className="input pl-10"
                   />
                   {filter.search && (
                     <button
@@ -490,7 +492,7 @@ export const NotesPage = () => {
                   )}
                 </div>
 
-                {/* ソート */}
+                {/* ソートメニュー */}
                 <div className="relative">
                   <button
                     onClick={() => setShowSortMenu(!showSortMenu)}
@@ -513,16 +515,20 @@ export const NotesPage = () => {
                         className="fixed inset-0 z-10"
                         onClick={() => setShowSortMenu(false)}
                       />
-                      <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
+                      <div className="absolute right-0 top-full mt-1 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
                         {sortOptions.map((option) => (
                           <button
                             key={option.field}
                             onClick={() => {
                               if (sort.field === option.field) {
-                                setSort({
-                                  order: sort.order === 'asc' ? 'desc' : 'asc',
-                                });
+                                // カスタム順以外の場合のみ昇順/降順切り替え
+                                if (option.field !== 'order') {
+                                  setSort({
+                                    order: sort.order === 'asc' ? 'desc' : 'asc',
+                                  });
+                                }
                               } else {
+                                // カスタム順の場合は常に昇順（ダッシュボードと一致）
                                 setSort({
                                   field: option.field,
                                   order: option.field === 'order' ? 'asc' : 'desc',
@@ -537,10 +543,8 @@ export const NotesPage = () => {
                             }`}
                           >
                             {option.label}
-                            {sort.field === option.field && (
-                              <span>
-                                {sort.order === 'asc' ? '↑' : '↓'}
-                              </span>
+                            {sort.field === option.field && option.field !== 'order' && (
+                              <span>{sort.order === 'asc' ? '↑' : '↓'}</span>
                             )}
                           </button>
                         ))}
@@ -563,13 +567,43 @@ export const NotesPage = () => {
                   >
                     選択解除
                   </button>
-                  <button
-                    onClick={handleExport}
-                    className="btn btn-secondary text-sm"
-                  >
-                    <Download className="w-4 h-4" />
-                    エクスポート
-                  </button>
+
+                  {/* エクスポートドロップダウン */}
+                  <div className="relative">
+                    <button
+                      onClick={() => setShowExportMenu(!showExportMenu)}
+                      className="btn btn-secondary text-sm"
+                    >
+                      <Download className="w-4 h-4" />
+                      エクスポート
+                      <ChevronDown className="w-3 h-3" />
+                    </button>
+                    {showExportMenu && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-10"
+                          onClick={() => setShowExportMenu(false)}
+                        />
+                        <div className="absolute right-0 top-full mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-20">
+                          <button
+                            onClick={handleExportJSON}
+                            className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                          >
+                            <FileJson className="w-4 h-4 text-amber-500" />
+                            JSON形式
+                          </button>
+                          <button
+                            onClick={handleExportWord}
+                            className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                          >
+                            <FileType className="w-4 h-4 text-blue-600" />
+                            Word形式 (.docx)
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
                   <button
                     onClick={handleBulkDelete}
                     className="btn bg-red-500 hover:bg-red-600 text-white text-sm"
@@ -769,72 +803,71 @@ const SortableNoteItem = ({
           )}
           <span
             className={`text-xs ${
-              categoryType === 'work' ? 'text-blue-600' : 
-              categoryType === 'common' ? 'text-green-600' : 'text-pink-600'
+              categoryType === 'work'
+                ? 'text-blue-600'
+                : categoryType === 'common'
+                ? 'text-green-600'
+                : 'text-pink-600'
             }`}
           >
             {getCategoryName(note.categoryId)}
           </span>
-          {noteTags.length > 0 && (
-            <div className="flex gap-1">
-              {noteTags.slice(0, 2).map((tag: any) => (
-                <span
-                  key={tag.id}
-                  className="px-1.5 py-0 rounded text-xs"
-                  style={{
-                    backgroundColor: `${tag.color}20`,
-                    color: tag.color,
-                  }}
-                >
-                  {tag.name}
-                </span>
-              ))}
-              {noteTags.length > 2 && (
-                <span className="text-xs text-gray-400">
-                  +{noteTags.length - 2}
-                </span>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
-      {/* URLジャンプボタン */}
+      {/* タグ（PCのみ） */}
+      <div className="hidden md:flex items-center gap-1 flex-shrink-0">
+        {noteTags.slice(0, 2).map((tag: any) => (
+          <span
+            key={tag.id}
+            className="px-2 py-0.5 rounded-full text-xs"
+            style={{
+              backgroundColor: `${tag.color}20`,
+              color: tag.color,
+            }}
+          >
+            {tag.name}
+          </span>
+        ))}
+        {noteTags.length > 2 && (
+          <span className="text-xs text-gray-400">+{noteTags.length - 2}</span>
+        )}
+      </div>
+
+      {/* URLボタン */}
       {note.urls && note.urls.length > 0 && (
         <div className="flex-shrink-0">
           {note.urls.length === 1 ? (
             <a
-              href={note.urls[0].url}
+              href={(note.urls[0] as UrlInfo).url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors"
-              title={note.urls[0].title || note.urls[0].url}
+              className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+              title={
+                (note.urls[0] as UrlInfo).title || (note.urls[0] as UrlInfo).url
+              }
             >
               <ExternalLink className="w-4 h-4" />
             </a>
           ) : (
-            <div className="relative group">
-              <button
-                onClick={(e) => e.stopPropagation()}
-                className="p-1.5 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded transition-colors flex items-center gap-0.5"
-              >
+            <div className="relative group/url">
+              <button className="p-1.5 rounded text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-0.5">
                 <ExternalLink className="w-4 h-4" />
                 <span className="text-xs">{note.urls.length}</span>
               </button>
-              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 hidden group-hover:block">
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20 opacity-0 invisible group-hover/url:opacity-100 group-hover/url:visible transition-all">
                 {note.urls.map((urlInfo: UrlInfo, idx: number) => (
                   <a
                     key={idx}
                     href={urlInfo.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 text-sm"
+                    className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <ExternalLink className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                    <span className="truncate">
-                      {urlInfo.title || urlInfo.url}
-                    </span>
+                    <ExternalLink className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                    <span className="truncate">{urlInfo.title || urlInfo.url}</span>
                   </a>
                 ))}
               </div>
@@ -843,32 +876,29 @@ const SortableNoteItem = ({
         </div>
       )}
 
-      {/* お気に入り */}
+      {/* 日時 */}
+      <div className="hidden sm:block text-xs text-gray-400 flex-shrink-0">
+        {formatDistanceToNow(note.updatedAt, { addSuffix: true, locale: ja })}
+      </div>
+
+      {/* お気に入りボタン */}
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          handleToggleFavorite(note);
-        }}
-        className={`p-1.5 rounded transition-colors flex-shrink-0 ${
-          note.isFavorite
-            ? 'text-amber-500'
-            : 'text-gray-300 hover:text-amber-400'
-        }`}
+        onClick={() => handleToggleFavorite(note)}
+        className="p-1.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
       >
         <Star
-          className={`w-4 h-4 ${note.isFavorite ? 'fill-amber-500' : ''}`}
+          className={`w-4 h-4 ${
+            note.isFavorite ? 'fill-amber-500 text-amber-500' : 'text-gray-400'
+          }`}
         />
       </button>
 
-      {/* 編集 */}
+      {/* 編集ボタン */}
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          openModal('edit', note.id);
-        }}
-        className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors flex-shrink-0"
+        onClick={() => openModal('edit', note.id)}
+        className="p-1.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0"
       >
-        <Edit className="w-4 h-4" />
+        <Edit className="w-4 h-4 text-gray-400" />
       </button>
     </div>
   );
