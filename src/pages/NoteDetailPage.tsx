@@ -86,18 +86,39 @@ export const NoteDetailPage = () => {
     [note, updateNote]
   );
 
-  // DOMレンダリング後にチェックボックスにインデックスを付与
+  // DOMレンダリング後にチェックボックスにイベントリスナーを追加
   useEffect(() => {
-    if (contentRef.current) {
-      const checkboxes = contentRef.current.querySelectorAll('input[type="checkbox"]');
-      console.log('Found checkboxes in DOM:', checkboxes.length);
-      checkboxes.forEach((checkbox, index) => {
-        console.log('Setting index', index, 'to checkbox');
-        checkbox.setAttribute('data-checkbox-index', index.toString());
-        (checkbox as HTMLInputElement).disabled = false;
+    if (!contentRef.current || !note) return;
+
+    const checkboxes = contentRef.current.querySelectorAll('input[type="checkbox"]');
+    console.log('Found checkboxes in DOM:', checkboxes.length);
+
+    const handleClick = (index: number) => (e: Event) => {
+      e.preventDefault();
+      e.stopPropagation();
+      console.log('Checkbox clicked, index:', index);
+      handleCheckboxToggle(index);
+    };
+
+    const listeners: { checkbox: Element; handler: (e: Event) => void }[] = [];
+
+    checkboxes.forEach((checkbox, index) => {
+      console.log('Setting index', index, 'to checkbox');
+      checkbox.setAttribute('data-checkbox-index', index.toString());
+      (checkbox as HTMLInputElement).disabled = false;
+      
+      const handler = handleClick(index);
+      checkbox.addEventListener('click', handler);
+      listeners.push({ checkbox, handler });
+    });
+
+    // クリーンアップ
+    return () => {
+      listeners.forEach(({ checkbox, handler }) => {
+        checkbox.removeEventListener('click', handler);
       });
-    }
-  }, [note?.content]);
+    };
+  }, [note?.content, handleCheckboxToggle]);
 
   if (!note) {
     return (
@@ -530,35 +551,6 @@ export const NoteDetailPage = () => {
               <div 
                 ref={contentRef}
                 className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1"
-                onClick={(e) => {
-                  const target = e.target as HTMLElement;
-                  console.log('Click target:', target.tagName);
-                  
-                  // チェックボックス自体がクリックされた場合
-                  if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'checkbox') {
-                    e.preventDefault();
-                    const indexStr = target.getAttribute('data-checkbox-index');
-                    console.log('Checkbox clicked, index attr:', indexStr);
-                    if (indexStr !== null) {
-                      handleCheckboxToggle(parseInt(indexStr, 10));
-                    }
-                    return;
-                  }
-                  
-                  // LI要素がクリックされた場合、中のチェックボックスを探す
-                  if (target.tagName === 'LI' || target.closest('li.task-list-item')) {
-                    const li = target.tagName === 'LI' ? target : target.closest('li.task-list-item');
-                    const checkbox = li?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
-                    if (checkbox) {
-                      e.preventDefault();
-                      const indexStr = checkbox.getAttribute('data-checkbox-index');
-                      console.log('LI clicked, checkbox index attr:', indexStr);
-                      if (indexStr !== null) {
-                        handleCheckboxToggle(parseInt(indexStr, 10));
-                      }
-                    }
-                  }
-                }}
               >
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
