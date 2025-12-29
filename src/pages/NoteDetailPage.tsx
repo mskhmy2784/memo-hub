@@ -93,29 +93,31 @@ export const NoteDetailPage = () => {
     const checkboxes = contentRef.current.querySelectorAll('input[type="checkbox"]');
     console.log('Found checkboxes in DOM:', checkboxes.length);
 
-    const handleClick = (index: number) => (e: Event) => {
-      e.preventDefault();
-      e.stopPropagation();
-      console.log('Checkbox clicked, index:', index);
-      handleCheckboxToggle(index);
-    };
-
-    const listeners: { checkbox: Element; handler: (e: Event) => void }[] = [];
+    const handlers: Array<{ checkbox: Element; handler: (e: Event) => void }> = [];
 
     checkboxes.forEach((checkbox, index) => {
       console.log('Setting index', index, 'to checkbox');
-      checkbox.setAttribute('data-checkbox-index', index.toString());
-      (checkbox as HTMLInputElement).disabled = false;
+      const input = checkbox as HTMLInputElement;
+      input.setAttribute('data-checkbox-index', index.toString());
+      input.disabled = false;
+      input.style.pointerEvents = 'auto';
+      input.style.cursor = 'pointer';
       
-      const handler = handleClick(index);
-      checkbox.addEventListener('click', handler);
-      listeners.push({ checkbox, handler });
+      const handler = (e: Event) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Checkbox clicked, index:', index);
+        handleCheckboxToggle(index);
+      };
+      
+      input.addEventListener('click', handler, true); // capture phase
+      handlers.push({ checkbox, handler });
     });
 
     // クリーンアップ
     return () => {
-      listeners.forEach(({ checkbox, handler }) => {
-        checkbox.removeEventListener('click', handler);
+      handlers.forEach(({ checkbox, handler }) => {
+        checkbox.removeEventListener('click', handler, true);
       });
     };
   }, [note?.content, handleCheckboxToggle]);
