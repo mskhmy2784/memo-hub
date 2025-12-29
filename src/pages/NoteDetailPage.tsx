@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useNotesStore } from '../stores/notesStore';
 import { useFirestore } from '../hooks/useFirestore';
@@ -28,6 +28,70 @@ import {
 } from 'lucide-react';
 import { exportSingleNoteToWord } from '../utils/exportToWord';
 
+// チェックボックス付きMarkdownコンポーネント
+const CheckboxMarkdown = ({ 
+  content, 
+  onCheckboxToggle 
+}: { 
+  content: string; 
+  onCheckboxToggle: (index: number) => void;
+}) => {
+  let checkboxIndex = 0;
+
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer">
+            {children}
+          </a>
+        ),
+        img: ({ src, alt }) => (
+          <img
+            src={src}
+            alt={alt || ''}
+            className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
+            loading="lazy"
+            onClick={() => src && window.open(src, '_blank')}
+          />
+        ),
+        input: (props) => {
+          if (props.type === 'checkbox') {
+            const currentIndex = checkboxIndex++;
+            const isChecked = props.checked || false;
+            return (
+              <input
+                type="checkbox"
+                checked={isChecked}
+                onChange={() => {
+                  console.log('Checkbox onChange, index:', currentIndex);
+                  onCheckboxToggle(currentIndex);
+                }}
+                className="cursor-pointer w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
+              />
+            );
+          }
+          return <input {...props} />;
+        },
+        li: ({ children, className, ...props }) => {
+          const isTaskItem = className?.includes('task-list-item');
+          return (
+            <li
+              className={`${className || ''} ${isTaskItem ? 'list-none flex items-start gap-1' : ''}`}
+              {...props}
+            >
+              {children}
+            </li>
+          );
+        },
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
+};
+
 export const NoteDetailPage = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -37,7 +101,6 @@ export const NoteDetailPage = () => {
   const [showMenu, setShowMenu] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
 
   const note = notes.find((n) => n.id === id);
 
@@ -85,42 +148,6 @@ export const NoteDetailPage = () => {
     },
     [note, updateNote]
   );
-
-  // DOMレンダリング後にチェックボックスにイベントリスナーを追加
-  useEffect(() => {
-    if (!contentRef.current || !note) return;
-
-    const checkboxes = contentRef.current.querySelectorAll('input[type="checkbox"]');
-    console.log('Found checkboxes in DOM:', checkboxes.length);
-
-    const handlers: Array<{ checkbox: Element; handler: (e: Event) => void }> = [];
-
-    checkboxes.forEach((checkbox, index) => {
-      console.log('Setting index', index, 'to checkbox');
-      const input = checkbox as HTMLInputElement;
-      input.setAttribute('data-checkbox-index', index.toString());
-      input.disabled = false;
-      input.style.pointerEvents = 'auto';
-      input.style.cursor = 'pointer';
-      
-      const handler = (e: Event) => {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log('Checkbox clicked, index:', index);
-        handleCheckboxToggle(index);
-      };
-      
-      input.addEventListener('click', handler, true); // capture phase
-      handlers.push({ checkbox, handler });
-    });
-
-    // クリーンアップ
-    return () => {
-      handlers.forEach(({ checkbox, handler }) => {
-        checkbox.removeEventListener('click', handler, true);
-      });
-    };
-  }, [note?.content, handleCheckboxToggle]);
 
   if (!note) {
     return (
@@ -550,42 +577,11 @@ export const NoteDetailPage = () => {
           {note.content && (
             <div className="mb-6">
               <h2 className="text-sm font-medium text-gray-500 mb-2">メモ</h2>
-              <div 
-                ref={contentRef}
-                className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1"
-              >
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    a: ({ href, children }) => (
-                      <a href={href} target="_blank" rel="noopener noreferrer">
-                        {children}
-                      </a>
-                    ),
-                    img: ({ src, alt }) => (
-                      <img
-                        src={src}
-                        alt={alt || ''}
-                        className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
-                        loading="lazy"
-                        onClick={() => src && window.open(src, '_blank')}
-                      />
-                    ),
-                    li: ({ children, className, ...props }) => {
-                      const isTaskItem = className?.includes('task-list-item');
-                      return (
-                        <li
-                          className={`${className || ''} ${isTaskItem ? 'list-none flex items-start gap-1' : ''}`}
-                          {...props}
-                        >
-                          {children}
-                        </li>
-                      );
-                    },
-                  }}
-                >
-                  {note.content}
-                </ReactMarkdown>
+              <div className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
+                <CheckboxMarkdown 
+                  content={note.content} 
+                  onCheckboxToggle={handleCheckboxToggle}
+                />
               </div>
             </div>
           )}
