@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useNotesStore } from '../stores/notesStore';
 import { useFirestore } from '../hooks/useFirestore';
@@ -110,41 +110,33 @@ export const NoteDetailPage = () => {
     async (checkboxIndex: number) => {
       if (!note) return;
 
-      const lines = note.content.split('\n');
-      let currentCheckboxIndex = 0;
-      let updated = false;
+      // すべてのチェックボックスパターンを見つける（- [ ] または - [x]）
+      const checkboxPattern = /- \[([ xX])\]/g;
+      let match;
+      let currentIndex = 0;
+      let newContent = note.content;
+      let found = false;
 
-      const newLines = lines.map((line) => {
-        // チェックボックスのパターンにマッチ
-        const uncheckedMatch = line.match(/^(\s*[-*+]\s*)\[ \](.*)$/);
-        const checkedMatch = line.match(/^(\s*[-*+]\s*)\[x\](.*)$/i);
-
-        if (uncheckedMatch || checkedMatch) {
-          if (currentCheckboxIndex === checkboxIndex) {
-            updated = true;
-            if (uncheckedMatch) {
-              // 未チェック → チェック済み
-              return `${uncheckedMatch[1]}[x]${uncheckedMatch[2]}`;
-            } else if (checkedMatch) {
-              // チェック済み → 未チェック
-              return `${checkedMatch[1]}[ ]${checkedMatch[2]}`;
-            }
-          }
-          currentCheckboxIndex++;
+      while ((match = checkboxPattern.exec(note.content)) !== null) {
+        if (currentIndex === checkboxIndex) {
+          const isChecked = match[1].toLowerCase() === 'x';
+          const replacement = isChecked ? '- [ ]' : '- [x]';
+          newContent =
+            note.content.substring(0, match.index) +
+            replacement +
+            note.content.substring(match.index + match[0].length);
+          found = true;
+          break;
         }
-        return line;
-      });
+        currentIndex++;
+      }
 
-      if (updated) {
-        const newContent = newLines.join('\n');
+      if (found) {
         await updateNote(note.id, { content: newContent });
       }
     },
     [note, updateNote]
   );
-
-  // チェックボックスのインデックスをカウントするためのカウンター
-  const checkboxCounterRef = useRef(0);
 
   // お気に入り切り替え
   const handleToggleFavorite = async () => {
@@ -510,62 +502,65 @@ export const NoteDetailPage = () => {
             <div className="mb-6">
               <h2 className="text-sm font-medium text-gray-500 mb-2">メモ</h2>
               <div className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
-                  components={{
-                    a: ({ href, children }) => (
-                      <a href={href} target="_blank" rel="noopener noreferrer">
-                        {children}
-                      </a>
-                    ),
-                    img: ({ src, alt }) => (
-                      <img
-                        src={src}
-                        alt={alt || ''}
-                        className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
-                        loading="lazy"
-                        onClick={() => src && window.open(src, '_blank')}
-                      />
-                    ),
-                    input: ({ type, checked, disabled, ...props }) => {
-                      if (type === 'checkbox') {
-                        const currentIndex = checkboxCounterRef.current++;
-                        return (
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            disabled={false}
-                            onClick={(e) => {
-                              e.preventDefault();
-                              handleCheckboxToggle(currentIndex);
-                            }}
-                            onChange={() => {}}
-                            className="cursor-pointer w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
+                {(() => {
+                  // レンダリング前にカウンターをリセット
+                  let checkboxIndex = 0;
+                  
+                  return (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({ href, children }) => (
+                          <a href={href} target="_blank" rel="noopener noreferrer">
+                            {children}
+                          </a>
+                        ),
+                        img: ({ src, alt }) => (
+                          <img
+                            src={src}
+                            alt={alt || ''}
+                            className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
+                            loading="lazy"
+                            onClick={() => src && window.open(src, '_blank')}
                           />
-                        );
-                      }
-                      return <input type={type} checked={checked} disabled={disabled} {...props} />;
-                    },
-                    li: ({ children, className, ...props }) => {
-                      // タスクリストのliにはcontains-task-listクラスが付く
-                      const isTaskItem = className?.includes('task-list-item');
-                      return (
-                        <li
-                          className={`${className || ''} ${isTaskItem ? 'list-none flex items-start gap-1' : ''}`}
-                          {...props}
-                        >
-                          {children}
-                        </li>
-                      );
-                    },
-                  }}
-                >
-                  {(() => {
-                    // レンダリング前にカウンターをリセット
-                    checkboxCounterRef.current = 0;
-                    return note.content;
-                  })()}
-                </ReactMarkdown>
+                        ),
+                        input: ({ type, checked, disabled, ...props }) => {
+                          if (type === 'checkbox') {
+                            const currentIndex = checkboxIndex;
+                            checkboxIndex++;
+                            return (
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                disabled={false}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  handleCheckboxToggle(currentIndex);
+                                }}
+                                onChange={() => {}}
+                                className="cursor-pointer w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
+                              />
+                            );
+                          }
+                          return <input type={type} checked={checked} disabled={disabled} {...props} />;
+                        },
+                        li: ({ children, className, ...props }) => {
+                          const isTaskItem = className?.includes('task-list-item');
+                          return (
+                            <li
+                              className={`${className || ''} ${isTaskItem ? 'list-none flex items-start gap-1' : ''}`}
+                              {...props}
+                            >
+                              {children}
+                            </li>
+                          );
+                        },
+                      }}
+                    >
+                      {note.content}
+                    </ReactMarkdown>
+                  );
+                })()}
               </div>
             </div>
           )}
