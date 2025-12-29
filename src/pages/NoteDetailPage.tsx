@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useNotesStore } from '../stores/notesStore';
 import { useFirestore } from '../hooks/useFirestore';
@@ -104,6 +104,47 @@ export const NoteDetailPage = () => {
       setTimeout(() => setLinkCopied(false), 2000);
     }
   };
+
+  // チェックボックスのトグル処理
+  const handleCheckboxToggle = useCallback(
+    async (checkboxIndex: number) => {
+      if (!note) return;
+
+      const lines = note.content.split('\n');
+      let currentCheckboxIndex = 0;
+      let updated = false;
+
+      const newLines = lines.map((line) => {
+        // チェックボックスのパターンにマッチ
+        const uncheckedMatch = line.match(/^(\s*[-*+]\s*)\[ \](.*)$/);
+        const checkedMatch = line.match(/^(\s*[-*+]\s*)\[x\](.*)$/i);
+
+        if (uncheckedMatch || checkedMatch) {
+          if (currentCheckboxIndex === checkboxIndex) {
+            updated = true;
+            if (uncheckedMatch) {
+              // 未チェック → チェック済み
+              return `${uncheckedMatch[1]}[x]${uncheckedMatch[2]}`;
+            } else if (checkedMatch) {
+              // チェック済み → 未チェック
+              return `${checkedMatch[1]}[ ]${checkedMatch[2]}`;
+            }
+          }
+          currentCheckboxIndex++;
+        }
+        return line;
+      });
+
+      if (updated) {
+        const newContent = newLines.join('\n');
+        await updateNote(note.id, { content: newContent });
+      }
+    },
+    [note, updateNote]
+  );
+
+  // チェックボックスのインデックスをカウントするためのカウンター
+  const checkboxCounterRef = useRef(0);
 
   // お気に入り切り替え
   const handleToggleFavorite = async () => {
@@ -486,9 +527,40 @@ export const NoteDetailPage = () => {
                         onClick={() => src && window.open(src, '_blank')}
                       />
                     ),
+                    input: ({ type, checked, ...props }) => {
+                      if (type === 'checkbox') {
+                        const currentIndex = checkboxCounterRef.current++;
+                        return (
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => handleCheckboxToggle(currentIndex)}
+                            className="cursor-pointer w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
+                            {...props}
+                          />
+                        );
+                      }
+                      return <input type={type} checked={checked} {...props} />;
+                    },
+                    li: ({ children, className, ...props }) => {
+                      // タスクリストのliにはcontains-task-listクラスが付く
+                      const isTaskItem = className?.includes('task-list-item');
+                      return (
+                        <li
+                          className={`${className || ''} ${isTaskItem ? 'list-none flex items-start gap-1' : ''}`}
+                          {...props}
+                        >
+                          {children}
+                        </li>
+                      );
+                    },
                   }}
                 >
-                  {note.content}
+                  {(() => {
+                    // レンダリング前にカウンターをリセット
+                    checkboxCounterRef.current = 0;
+                    return note.content;
+                  })()}
                 </ReactMarkdown>
               </div>
             </div>
