@@ -527,20 +527,24 @@ export const NoteDetailPage = () => {
                         onClick={() => src && window.open(src, '_blank')}
                       />
                     ),
-                    input: ({ type, checked, ...props }) => {
+                    input: ({ type, checked, disabled, ...props }) => {
                       if (type === 'checkbox') {
                         const currentIndex = checkboxCounterRef.current++;
                         return (
                           <input
                             type="checkbox"
                             checked={checked}
-                            onChange={() => handleCheckboxToggle(currentIndex)}
+                            disabled={false}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              handleCheckboxToggle(currentIndex);
+                            }}
+                            onChange={() => {}}
                             className="cursor-pointer w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
-                            {...props}
                           />
                         );
                       }
-                      return <input type={type} checked={checked} {...props} />;
+                      return <input type={type} checked={checked} disabled={disabled} {...props} />;
                     },
                     li: ({ children, className, ...props }) => {
                       // タスクリストのliにはcontains-task-listクラスが付く
