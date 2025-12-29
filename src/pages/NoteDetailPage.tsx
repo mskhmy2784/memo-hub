@@ -41,11 +41,58 @@ export const NoteDetailPage = () => {
 
   const note = notes.find((n) => n.id === id);
 
+  // チェックボックスのトグル処理 - useCallbackは早期リターン前に配置
+  const handleCheckboxToggle = useCallback(
+    async (checkboxIndex: number) => {
+      if (!note) return;
+
+      console.log('Toggle called with index:', checkboxIndex);
+      console.log('Current content:', note.content);
+
+      // すべてのチェックボックスパターンを見つける（- [ ] または - [x]）
+      const checkboxPattern = /- \[([ xX])\]/g;
+      const matches: { index: number; match: string; isChecked: boolean }[] = [];
+      let match;
+
+      while ((match = checkboxPattern.exec(note.content)) !== null) {
+        matches.push({
+          index: match.index,
+          match: match[0],
+          isChecked: match[1].toLowerCase() === 'x',
+        });
+      }
+
+      console.log('Found checkboxes:', matches);
+
+      if (checkboxIndex >= matches.length) {
+        console.log('Index out of range');
+        return;
+      }
+
+      const targetMatch = matches[checkboxIndex];
+      const replacement = targetMatch.isChecked ? '- [ ]' : '- [x]';
+
+      console.log('Target:', targetMatch, '-> Replacement:', replacement);
+
+      const newContent =
+        note.content.substring(0, targetMatch.index) +
+        replacement +
+        note.content.substring(targetMatch.index + targetMatch.match.length);
+
+      console.log('New content:', newContent);
+
+      await updateNote(note.id, { content: newContent });
+    },
+    [note, updateNote]
+  );
+
   // DOMレンダリング後にチェックボックスにインデックスを付与
   useEffect(() => {
     if (contentRef.current) {
       const checkboxes = contentRef.current.querySelectorAll('input[type="checkbox"]');
+      console.log('Found checkboxes in DOM:', checkboxes.length);
       checkboxes.forEach((checkbox, index) => {
+        console.log('Setting index', index, 'to checkbox');
         checkbox.setAttribute('data-checkbox-index', index.toString());
         (checkbox as HTMLInputElement).disabled = false;
       });
@@ -116,39 +163,6 @@ export const NoteDetailPage = () => {
       setTimeout(() => setLinkCopied(false), 2000);
     }
   };
-
-  // チェックボックスのトグル処理
-  const handleCheckboxToggle = useCallback(
-    async (checkboxIndex: number) => {
-      if (!note) return;
-
-      // すべてのチェックボックスパターンを見つける（- [ ] または - [x]）
-      const checkboxPattern = /- \[([ xX])\]/g;
-      let match;
-      let currentIndex = 0;
-      let newContent = note.content;
-      let found = false;
-
-      while ((match = checkboxPattern.exec(note.content)) !== null) {
-        if (currentIndex === checkboxIndex) {
-          const isChecked = match[1].toLowerCase() === 'x';
-          const replacement = isChecked ? '- [ ]' : '- [x]';
-          newContent =
-            note.content.substring(0, match.index) +
-            replacement +
-            note.content.substring(match.index + match[0].length);
-          found = true;
-          break;
-        }
-        currentIndex++;
-      }
-
-      if (found) {
-        await updateNote(note.id, { content: newContent });
-      }
-    },
-    [note, updateNote]
-  );
 
   // お気に入り切り替え
   const handleToggleFavorite = async () => {
@@ -518,9 +532,11 @@ export const NoteDetailPage = () => {
                 className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1"
                 onClick={(e) => {
                   const target = e.target as HTMLInputElement;
+                  console.log('Click target:', target.tagName, target.type);
                   if (target.tagName === 'INPUT' && target.type === 'checkbox') {
                     e.preventDefault();
                     const indexStr = target.getAttribute('data-checkbox-index');
+                    console.log('Checkbox clicked, index attr:', indexStr);
                     if (indexStr !== null) {
                       handleCheckboxToggle(parseInt(indexStr, 10));
                     }
