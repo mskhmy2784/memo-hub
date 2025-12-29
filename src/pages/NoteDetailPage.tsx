@@ -531,14 +531,31 @@ export const NoteDetailPage = () => {
                 ref={contentRef}
                 className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1"
                 onClick={(e) => {
-                  const target = e.target as HTMLInputElement;
-                  console.log('Click target:', target.tagName, target.type);
-                  if (target.tagName === 'INPUT' && target.type === 'checkbox') {
+                  const target = e.target as HTMLElement;
+                  console.log('Click target:', target.tagName);
+                  
+                  // チェックボックス自体がクリックされた場合
+                  if (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'checkbox') {
                     e.preventDefault();
                     const indexStr = target.getAttribute('data-checkbox-index');
                     console.log('Checkbox clicked, index attr:', indexStr);
                     if (indexStr !== null) {
                       handleCheckboxToggle(parseInt(indexStr, 10));
+                    }
+                    return;
+                  }
+                  
+                  // LI要素がクリックされた場合、中のチェックボックスを探す
+                  if (target.tagName === 'LI' || target.closest('li.task-list-item')) {
+                    const li = target.tagName === 'LI' ? target : target.closest('li.task-list-item');
+                    const checkbox = li?.querySelector('input[type="checkbox"]') as HTMLInputElement | null;
+                    if (checkbox) {
+                      e.preventDefault();
+                      const indexStr = checkbox.getAttribute('data-checkbox-index');
+                      console.log('LI clicked, checkbox index attr:', indexStr);
+                      if (indexStr !== null) {
+                        handleCheckboxToggle(parseInt(indexStr, 10));
+                      }
                     }
                   }
                 }}
