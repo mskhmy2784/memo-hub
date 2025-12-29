@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useNotesStore } from '../stores/notesStore';
 import { useFirestore } from '../hooks/useFirestore';
@@ -37,8 +37,20 @@ export const NoteDetailPage = () => {
   const [showMenu, setShowMenu] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   const note = notes.find((n) => n.id === id);
+
+  // DOMレンダリング後にチェックボックスにインデックスを付与
+  useEffect(() => {
+    if (contentRef.current) {
+      const checkboxes = contentRef.current.querySelectorAll('input[type="checkbox"]');
+      checkboxes.forEach((checkbox, index) => {
+        checkbox.setAttribute('data-checkbox-index', index.toString());
+        (checkbox as HTMLInputElement).disabled = false;
+      });
+    }
+  }, [note?.content]);
 
   if (!note) {
     return (
@@ -501,66 +513,52 @@ export const NoteDetailPage = () => {
           {note.content && (
             <div className="mb-6">
               <h2 className="text-sm font-medium text-gray-500 mb-2">メモ</h2>
-              <div className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1">
-                {(() => {
-                  // レンダリング前にカウンターをリセット
-                  let checkboxIndex = 0;
-                  
-                  return (
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        a: ({ href, children }) => (
-                          <a href={href} target="_blank" rel="noopener noreferrer">
-                            {children}
-                          </a>
-                        ),
-                        img: ({ src, alt }) => (
-                          <img
-                            src={src}
-                            alt={alt || ''}
-                            className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
-                            loading="lazy"
-                            onClick={() => src && window.open(src, '_blank')}
-                          />
-                        ),
-                        input: ({ type, checked, disabled, ...props }) => {
-                          if (type === 'checkbox') {
-                            const currentIndex = checkboxIndex;
-                            checkboxIndex++;
-                            return (
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                disabled={false}
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  handleCheckboxToggle(currentIndex);
-                                }}
-                                onChange={() => {}}
-                                className="cursor-pointer w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
-                              />
-                            );
-                          }
-                          return <input type={type} checked={checked} disabled={disabled} {...props} />;
-                        },
-                        li: ({ children, className, ...props }) => {
-                          const isTaskItem = className?.includes('task-list-item');
-                          return (
-                            <li
-                              className={`${className || ''} ${isTaskItem ? 'list-none flex items-start gap-1' : ''}`}
-                              {...props}
-                            >
-                              {children}
-                            </li>
-                          );
-                        },
-                      }}
-                    >
-                      {note.content}
-                    </ReactMarkdown>
-                  );
-                })()}
+              <div 
+                ref={contentRef}
+                className="prose prose-gray max-w-none prose-sm prose-headings:text-gray-800 prose-a:text-primary-600 prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-gray-100 prose-ul:list-disc prose-ul:pl-5 prose-ol:list-decimal prose-ol:pl-5 prose-li:my-1"
+                onClick={(e) => {
+                  const target = e.target as HTMLInputElement;
+                  if (target.tagName === 'INPUT' && target.type === 'checkbox') {
+                    e.preventDefault();
+                    const indexStr = target.getAttribute('data-checkbox-index');
+                    if (indexStr !== null) {
+                      handleCheckboxToggle(parseInt(indexStr, 10));
+                    }
+                  }
+                }}
+              >
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ href, children }) => (
+                      <a href={href} target="_blank" rel="noopener noreferrer">
+                        {children}
+                      </a>
+                    ),
+                    img: ({ src, alt }) => (
+                      <img
+                        src={src}
+                        alt={alt || ''}
+                        className="max-w-full h-auto rounded-lg my-2 cursor-pointer hover:opacity-90 transition-opacity"
+                        loading="lazy"
+                        onClick={() => src && window.open(src, '_blank')}
+                      />
+                    ),
+                    li: ({ children, className, ...props }) => {
+                      const isTaskItem = className?.includes('task-list-item');
+                      return (
+                        <li
+                          className={`${className || ''} ${isTaskItem ? 'list-none flex items-start gap-1' : ''}`}
+                          {...props}
+                        >
+                          {children}
+                        </li>
+                      );
+                    },
+                  }}
+                >
+                  {note.content}
+                </ReactMarkdown>
               </div>
             </div>
           )}
