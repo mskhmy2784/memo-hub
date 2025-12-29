@@ -246,6 +246,56 @@ export const NoteDetailPage = () => {
 
   // エクスポート: PDF形式（ブラウザ印刷機能を使用）
   const handleExportPDF = () => {
+    // MarkdownをHTMLに変換する簡易関数
+    const markdownToHtml = (md: string): string => {
+      let html = md
+        // コードブロック
+        .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+        // インラインコード
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        // 見出し
+        .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+        .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+        .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+        .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+        // 太字と斜体
+        .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        // 引用
+        .replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>')
+        // 水平線
+        .replace(/^---$/gm, '<hr>')
+        .replace(/^\*\*\*$/gm, '<hr>')
+        // チェックリスト
+        .replace(/^- \[x\] (.+)$/gim, '<li class="task"><input type="checkbox" checked disabled> $1</li>')
+        .replace(/^- \[ \] (.+)$/gm, '<li class="task"><input type="checkbox" disabled> $1</li>')
+        // リスト
+        .replace(/^- (.+)$/gm, '<li>$1</li>')
+        .replace(/^\* (.+)$/gm, '<li>$1</li>')
+        .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+        // リンク
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>')
+        // 画像
+        .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%">')
+        // 改行
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>');
+
+      // 連続するliをul/olで囲む
+      html = html.replace(/(<li class="task">.*?<\/li>(\s*<br>)*)+/g, (match) => {
+        return '<ul class="task-list">' + match.replace(/<br>/g, '') + '</ul>';
+      });
+      html = html.replace(/(<li>.*?<\/li>(\s*<br>)*)+/g, (match) => {
+        return '<ul>' + match.replace(/<br>/g, '') + '</ul>';
+      });
+
+      // 連続するblockquoteを結合
+      html = html.replace(/<\/blockquote>\s*<blockquote>/g, '<br>');
+
+      return '<p>' + html + '</p>';
+    };
+
     // 印刷用のウィンドウを開いてPDFとして保存
     const printContent = `
       <!DOCTYPE html>
@@ -254,22 +304,38 @@ export const NoteDetailPage = () => {
         <meta charset="utf-8">
         <title>${note.title}</title>
         <style>
-          body { font-family: 'Yu Gothic', 'Hiragino Sans', sans-serif; line-height: 1.6; padding: 40px; max-width: 800px; margin: 0 auto; }
-          h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+          body { font-family: 'Yu Gothic', 'Hiragino Sans', sans-serif; line-height: 1.8; padding: 40px; max-width: 800px; margin: 0 auto; color: #333; }
+          h1 { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+          h2 { border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 30px; }
+          h3 { margin-top: 25px; }
+          h4 { margin-top: 20px; }
           .meta { color: #666; font-size: 14px; margin-bottom: 20px; }
           .meta span { margin-right: 15px; }
           .urls { margin: 20px 0; padding: 15px; background: #f5f5f5; border-radius: 8px; }
-          .urls h2 { font-size: 16px; margin: 0 0 10px 0; }
+          .urls h2 { font-size: 16px; margin: 0 0 10px 0; border: none; }
+          .urls ul { margin: 0; padding-left: 20px; }
           .urls a { color: #0066cc; text-decoration: none; }
           .urls a:hover { text-decoration: underline; }
           .content { margin-top: 30px; }
-          .content h1, .content h2, .content h3 { margin-top: 20px; }
-          .content pre { background: #f5f5f5; padding: 15px; border-radius: 4px; overflow-x: auto; }
-          .content code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: Consolas, monospace; }
-          .content blockquote { border-left: 4px solid #ddd; margin: 10px 0; padding-left: 15px; color: #666; }
-          .content ul, .content ol { padding-left: 25px; }
-          .content img { max-width: 100%; height: auto; }
-          @media print { body { padding: 20px; } }
+          .content p { margin: 10px 0; }
+          .content pre { background: #f5f5f5; padding: 15px; border-radius: 4px; overflow-x: auto; font-family: Consolas, 'Courier New', monospace; font-size: 13px; }
+          .content code { background: #f0f0f0; padding: 2px 6px; border-radius: 3px; font-family: Consolas, 'Courier New', monospace; font-size: 13px; }
+          .content pre code { background: none; padding: 0; }
+          .content blockquote { border-left: 4px solid #ddd; margin: 15px 0; padding: 10px 15px; color: #666; background: #fafafa; }
+          .content ul, .content ol { padding-left: 25px; margin: 10px 0; }
+          .content li { margin: 5px 0; }
+          .content ul.task-list { list-style: none; padding-left: 5px; }
+          .content li.task { display: flex; align-items: flex-start; gap: 8px; }
+          .content li.task input { margin-top: 4px; }
+          .content img { max-width: 100%; height: auto; border-radius: 4px; margin: 10px 0; }
+          .content a { color: #0066cc; text-decoration: none; }
+          .content a:hover { text-decoration: underline; }
+          .content hr { border: none; border-top: 1px solid #ddd; margin: 20px 0; }
+          .content strong { font-weight: 600; }
+          @media print { 
+            body { padding: 20px; }
+            .urls { break-inside: avoid; }
+          }
         </style>
       </head>
       <body>
@@ -294,7 +360,7 @@ export const NoteDetailPage = () => {
         ` : ''}
         <hr>
         <div class="content">
-          ${note.content ? note.content.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>') : '<p style="color: #999;">内容なし</p>'}
+          ${note.content ? markdownToHtml(note.content) : '<p style="color: #999;">内容なし</p>'}
         </div>
       </body>
       </html>
