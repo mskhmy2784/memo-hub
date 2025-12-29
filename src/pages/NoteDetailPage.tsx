@@ -64,10 +64,7 @@ const CheckboxMarkdown = ({
               <input
                 type="checkbox"
                 checked={isChecked}
-                onChange={() => {
-                  console.log('Checkbox onChange, index:', currentIndex);
-                  onCheckboxToggle(currentIndex);
-                }}
+                onChange={() => onCheckboxToggle(currentIndex)}
                 className="cursor-pointer w-4 h-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500 mr-2"
               />
             );
@@ -109,9 +106,6 @@ export const NoteDetailPage = () => {
     async (checkboxIndex: number) => {
       if (!note) return;
 
-      console.log('Toggle called with index:', checkboxIndex);
-      console.log('Current content:', note.content);
-
       // すべてのチェックボックスパターンを見つける（- [ ] または - [x]）
       const checkboxPattern = /- \[([ xX])\]/g;
       const matches: { index: number; match: string; isChecked: boolean }[] = [];
@@ -125,24 +119,17 @@ export const NoteDetailPage = () => {
         });
       }
 
-      console.log('Found checkboxes:', matches);
-
       if (checkboxIndex >= matches.length) {
-        console.log('Index out of range');
         return;
       }
 
       const targetMatch = matches[checkboxIndex];
       const replacement = targetMatch.isChecked ? '- [ ]' : '- [x]';
 
-      console.log('Target:', targetMatch, '-> Replacement:', replacement);
-
       const newContent =
         note.content.substring(0, targetMatch.index) +
         replacement +
         note.content.substring(targetMatch.index + targetMatch.match.length);
-
-      console.log('New content:', newContent);
 
       await updateNote(note.id, { content: newContent });
     },
