@@ -8,48 +8,48 @@ interface NotesState {
   filter: FilterOptions;
   sort: SortOptions;
   modal: ModalState;
+  deleteDialog: DeleteDialogState;
   selectedNoteIds: string[];
   isLoading: boolean;
-  deleteDialog: DeleteDialogState;
-  
+
   // Notes actions
   setNotes: (notes: Note[]) => void;
   addNote: (note: Note) => void;
   updateNote: (id: string, updates: Partial<Note>) => void;
   deleteNote: (id: string) => void;
-  
+
   // Categories actions
   setCategories: (categories: Category[]) => void;
   addCategory: (category: Category) => void;
   updateCategory: (id: string, updates: Partial<Category>) => void;
   deleteCategory: (id: string) => void;
-  
+
   // Tags actions
   setTags: (tags: Tag[]) => void;
   addTag: (tag: Tag) => void;
   updateTag: (id: string, updates: Partial<Tag>) => void;
   deleteTag: (id: string) => void;
-  
+
   // Filter & Sort actions
   setFilter: (filter: Partial<FilterOptions>) => void;
   resetFilter: () => void;
   setSort: (sort: Partial<SortOptions>) => void;
-  
+
   // Modal actions
-  openModal: (mode: 'create' | 'edit', noteId?: string) => void;
+  openModal: (mode: 'create' | 'edit', noteId?: string, defaultCategoryId?: string) => void;
   closeModal: () => void;
-  
+
+  // Delete Dialog actions
+  openDeleteDialog: (noteIds: string[], mode?: 'single' | 'bulk') => void;
+  closeDeleteDialog: () => void;
+
   // Selection actions
   toggleSelectNote: (id: string) => void;
   selectAllNotes: (ids: string[]) => void;
   clearSelection: () => void;
-  
+
   // Loading
   setLoading: (loading: boolean) => void;
-  
-  // Delete Dialog actions
-  openDeleteDialog: (noteIds: string[], mode?: 'single' | 'bulk') => void;
-  closeDeleteDialog: () => void;
 }
 
 const initialFilter: FilterOptions = {
@@ -58,12 +58,17 @@ const initialFilter: FilterOptions = {
   tagIds: [],
   priority: null,
   showFavoritesOnly: false,
-  includeArchived: false,
 };
 
 const initialSort: SortOptions = {
   field: 'updatedAt',
   order: 'desc',
+};
+
+const initialDeleteDialog: DeleteDialogState = {
+  isOpen: false,
+  noteIds: [],
+  mode: 'single',
 };
 
 export const useNotesStore = create<NotesState>((set) => ({
@@ -73,10 +78,10 @@ export const useNotesStore = create<NotesState>((set) => ({
   filter: initialFilter,
   sort: initialSort,
   modal: { isOpen: false, mode: 'create' },
+  deleteDialog: initialDeleteDialog,
   selectedNoteIds: [],
   isLoading: true,
-  deleteDialog: { isOpen: false, noteIds: [], mode: 'single' },
-  
+
   // Notes actions
   setNotes: (notes) => set({ notes }),
   addNote: (note) => set((state) => ({ notes: [note, ...state.notes] })),
@@ -87,7 +92,7 @@ export const useNotesStore = create<NotesState>((set) => ({
     notes: state.notes.filter((n) => n.id !== id),
     selectedNoteIds: state.selectedNoteIds.filter((sid) => sid !== id),
   })),
-  
+
   // Categories actions
   setCategories: (categories) => set({ categories }),
   addCategory: (category) => set((state) => ({ categories: [...state.categories, category] })),
@@ -97,7 +102,7 @@ export const useNotesStore = create<NotesState>((set) => ({
   deleteCategory: (id) => set((state) => ({
     categories: state.categories.filter((c) => c.id !== id),
   })),
-  
+
   // Tags actions
   setTags: (tags) => set({ tags }),
   addTag: (tag) => set((state) => ({ tags: [...state.tags, tag] })),
@@ -107,16 +112,24 @@ export const useNotesStore = create<NotesState>((set) => ({
   deleteTag: (id) => set((state) => ({
     tags: state.tags.filter((t) => t.id !== id),
   })),
-  
+
   // Filter & Sort actions
   setFilter: (filter) => set((state) => ({ filter: { ...state.filter, ...filter } })),
   resetFilter: () => set({ filter: initialFilter }),
   setSort: (sort) => set((state) => ({ sort: { ...state.sort, ...sort } })),
-  
-  // Modal actions
-  openModal: (mode, noteId) => set({ modal: { isOpen: true, mode, noteId } }),
+
+  // Modal actions - defaultCategoryIdパラメータを追加
+  openModal: (mode, noteId, defaultCategoryId) => set({
+    modal: { isOpen: true, mode, noteId, defaultCategoryId }
+  }),
   closeModal: () => set({ modal: { isOpen: false, mode: 'create' } }),
-  
+
+  // Delete Dialog actions
+  openDeleteDialog: (noteIds, mode = 'single') => set({
+    deleteDialog: { isOpen: true, noteIds, mode }
+  }),
+  closeDeleteDialog: () => set({ deleteDialog: initialDeleteDialog }),
+
   // Selection actions
   toggleSelectNote: (id) => set((state) => ({
     selectedNoteIds: state.selectedNoteIds.includes(id)
@@ -125,15 +138,7 @@ export const useNotesStore = create<NotesState>((set) => ({
   })),
   selectAllNotes: (ids) => set({ selectedNoteIds: ids }),
   clearSelection: () => set({ selectedNoteIds: [] }),
-  
+
   // Loading
-  setLoading: (loading) => set({ isLoading: loading }),
-  
-  // Delete Dialog actions
-  openDeleteDialog: (noteIds, mode = 'single') => set({ 
-    deleteDialog: { isOpen: true, noteIds, mode } 
-  }),
-  closeDeleteDialog: () => set({ 
-    deleteDialog: { isOpen: false, noteIds: [], mode: 'single' } 
-  }),
+  setLoading: (isLoading) => set({ isLoading }),
 }));

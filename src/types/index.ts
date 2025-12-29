@@ -43,11 +43,10 @@ export interface Note {
   isFavorite: boolean;
   priority: 1 | 2 | 3; // 1:高 2:中 3:低
   order: number; // 表示順序
+  isArchived?: boolean; // アーカイブ済みフラグ
+  archivedAt?: Date; // アーカイブ日時
   createdAt: Date;
   updatedAt: Date;
-  // アーカイブ関連
-  isArchived: boolean;
-  archivedAt?: Date;
 }
 
 // フィルタオプション
@@ -57,7 +56,6 @@ export interface FilterOptions {
   tagIds: string[];
   priority: number | null;
   showFavoritesOnly: boolean;
-  includeArchived?: boolean; // 検索時にアーカイブも含める
 }
 
 // ソートオプション
@@ -74,9 +72,10 @@ export interface ModalState {
   isOpen: boolean;
   mode: 'create' | 'edit';
   noteId?: string;
+  defaultCategoryId?: string; // 新規追加：新規作成時のデフォルトカテゴリ
 }
 
-// 削除確認ダイアログ状態
+// 削除ダイアログ状態
 export interface DeleteDialogState {
   isOpen: boolean;
   noteIds: string[];
