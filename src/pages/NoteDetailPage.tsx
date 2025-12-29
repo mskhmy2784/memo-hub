@@ -23,6 +23,8 @@ import {
   FileCode,
   FileType,
   ChevronRight,
+  Link2,
+  Check,
 } from 'lucide-react';
 import { exportSingleNoteToWord } from '../utils/exportToWord';
 
@@ -34,6 +36,7 @@ export const NoteDetailPage = () => {
 
   const [showMenu, setShowMenu] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const note = notes.find((n) => n.id === id);
 
@@ -81,6 +84,26 @@ export const NoteDetailPage = () => {
       : note.priority === 2
       ? 'bg-yellow-100 text-yellow-700'
       : 'bg-blue-100 text-blue-700';
+
+  // リンクをクリップボードにコピー
+  const handleCopyLink = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (err) {
+      // フォールバック: 古いブラウザ用
+      const textArea = document.createElement('textarea');
+      textArea.value = url;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    }
+  };
 
   // お気に入り切り替え
   const handleToggleFavorite = async () => {
@@ -229,6 +252,23 @@ export const NoteDetailPage = () => {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* リンクコピーボタン */}
+              <button
+                onClick={handleCopyLink}
+                className={`p-2 rounded-lg transition-colors ${
+                  linkCopied
+                    ? 'bg-green-100 text-green-600'
+                    : 'hover:bg-gray-100 text-gray-400'
+                }`}
+                title={linkCopied ? 'コピーしました！' : 'リンクをコピー'}
+              >
+                {linkCopied ? (
+                  <Check className="w-5 h-5" />
+                ) : (
+                  <Link2 className="w-5 h-5" />
+                )}
+              </button>
+
               {/* お気に入りボタン */}
               <button
                 onClick={handleToggleFavorite}
